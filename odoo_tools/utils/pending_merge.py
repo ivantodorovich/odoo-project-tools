@@ -244,9 +244,13 @@ class Repo:
             )
             return True
 
-        response = requests.get(f"{self.api_url(upstream=upstream)}/pulls/{pull_id}")
+        token = os.environ.get("GITHUB_TOKEN")
+        headers = {"Authorization": f"token {token}"} if token else None
+        response = requests.get(
+            f"{self.api_url(upstream=upstream)}/pulls/{pull_id}",
+            headers=headers,
+        )
 
-        # TODO: auth
         base_branch = response.json().get("base", {}).get("ref")
         if response.ok:
             if base_branch:

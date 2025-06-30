@@ -150,6 +150,41 @@ def test_add_pending_pr():
 
 
 @pytest.mark.usefixtures("project")
+def test_add_pending_pr_auth_header():
+    """Ensure GITHUB_TOKEN is passed to the GitHub API."""
+    name = "edi"
+    mock_pending_merge_repo_paths(name)
+    repo = Repo(name, path_check=False)
+    token = "secret-token"
+    response = mock.Mock(ok=True, json=lambda: {"base": {"ref": "14.0"}})
+    with (
+        mock.patch.dict(os.environ, {"GITHUB_TOKEN": token}, clear=False),
+        mock.patch("requests.get", return_value=response) as mock_get,
+    ):
+        repo.add_pending_pull_request("OCA", 778)
+        mock_get.assert_called_with(
+            f"{repo.api_url(upstream='OCA')}/pulls/778",
+            headers={"Authorization": f"token {token}"},
+        )
+
+
+@pytest.mark.usefixtures("project")
+def test_add_pending_pr_no_token():
+    """Ensure no Authorization header is sent without token."""
+    name = "edi"
+    mock_pending_merge_repo_paths(name)
+    repo = Repo(name, path_check=False)
+    response = mock.Mock(ok=True, json=lambda: {"base": {"ref": "14.0"}})
+    with mock.patch.dict(os.environ, {}, clear=False):
+        with mock.patch("requests.get", return_value=response) as mock_get:
+            repo.add_pending_pull_request("OCA", 778)
+            mock_get.assert_called_with(
+                f"{repo.api_url(upstream='OCA')}/pulls/778",
+                headers=None,
+            )
+
+
+@pytest.mark.usefixtures("project")
 @pytest.mark.project_setup(proj_tmpl_ver=1)
 def test_add_pending_odoo_pr_v1():
     repo = Repo("odoo", path_check=False)
