@@ -15,10 +15,16 @@ def get_version():
     return [int(x) for x in version.split(".") if x.isdigit()]
 
 
-def up(override=None):
+def up(override=None, detach=False, wait=True, service=None):
     command = ["docker", "compose", "up"]
     if override:
         command[2:2] = ["-f", "docker-compose.yml", "-f", override]
+    if detach:
+        command.append("--detach")
+        if wait:
+            command.append("--wait")
+    if service:
+        command.append(service)
     return command
 
 
@@ -80,8 +86,20 @@ def build(service="odoo", quiet=True):
     return command
 
 
-def down():
+def down(service=None):
     command = ["docker", "compose", "down"]
+    if service:
+        command.append(service)
+    return command
+
+
+def port(service, port):
+    command = ["docker", "compose", "port", service, port]
+    return command
+
+
+def get_db_port():
+    command = port("db", "5432")
     return command
 
 

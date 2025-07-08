@@ -1,7 +1,11 @@
 # Copyright 2025 Camptocamp SA
 # License AGPL-3.0 or later (http://www.gnu.org/licenses/agpl.html)
 
+import atexit
+from contextlib import contextmanager
 from pathlib import Path
+
+import psycopg2
 
 from . import docker_compose, os_exec, ui
 
@@ -92,3 +96,52 @@ def _load_database(db_name, fname):
         msg = f"❌ ** Database file {fname} for restore was not found**"
         return ui.exit_msg(msg)
     return fname
+
+
+@contextmanager
+def ensure_db_container_up():
+    """Ensure the database container is up and running.
+
+    Yields:
+        int: the port of the database container
+    """
+    try:
+        # First, try to get the port of the database container.
+        # If we succeed, then it means it's already running.
+        port = get_db_port()
+    except Exception:
+        # Register a function to be called when the program exits, to stop the
+        # database container. This way we don't have to start/stop the container
+        # multiple times during the execution of the program.
+        atexit.register(os_exec.run, docker_compose.down(service="db"))
+        # Start the database container
+        os_exec.run(docker_compose.up(service="db", detach=True, wait=True))
+        port = get_db_port()
+    yield port
+
+
+def get_db_port() -> int:
+    """Get and return database container port."""
+    result = os_exec.run(docker_compose.get_db_port())
+    return int(result.split(":")[-1])
+
+
+def execute_db_request(dbname: str, sql: str) -> list[tuple]:
+    """Execute a SQL request on the given database."""
+    with ensure_db_container_up() as db_port:
+        dsn = f"host=localhost dbname={dbname} user=odoo password=odoo port={db_port}"
+        with psycopg2.connect(dsn) as db_connection:
+            with db_connection.cursor() as db_cursor:
+                db_cursor.execute(sql)
+                return db_cursor.fetchall()
+
+
+def get_db_list() -> list[str]:
+    """Return the list of databases on container."""
+    sql = """
+        SELECT datname
+        FROM pg_database
+        WHERE datistemplate = false
+        AND datname not in ('postgres', 'odoo');
+    """
+    return [row[0] for row in execute_db_request("postgres", sql)]

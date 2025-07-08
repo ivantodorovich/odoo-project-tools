@@ -3,17 +3,34 @@
 
 import getpass
 import os
-import time
-from contextlib import contextmanager
 from datetime import datetime
+from functools import wraps
 from pathlib import Path
+from typing import Callable
 
 import click
 import psycopg2
 
+from ..utils.db import ensure_db_container_up, execute_db_request, get_db_list
 from ..utils.os_exec import run
 from ..utils.path import cd, make_dir
 from ..utils.proj import get_project_manifest_key
+
+
+def handle_exceptions() -> Callable:
+    """Decorator to handle exceptions and print a nice error message."""
+
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            try:
+                return func(*args, **kwargs)
+            except Exception as e:
+                raise click.ClickException(f"Failed to {func.__name__}: {e}") from e
+
+        return wrapper
+
+    return decorator
 
 
 def get_default_parameters():
@@ -25,63 +42,6 @@ def get_default_parameters():
     project_name = get_project_manifest_key("project_name")
     ctx_customer = "-".join(project_name.split("_")[:-1])
     return ctx_platform, ctx_customer
-
-
-@contextmanager
-def ensure_db_container_up():
-    """Ensure the DB container is up and running."""
-    try:
-        run("docker compose port db 5432")
-        started = True
-    except Exception:
-        run("docker compose up -d db")
-        running = False
-        # Wait for the container to start
-        count = 0
-        while not running:
-            try:
-                run("docker compose port db 5432")
-                running = True
-            except Exception as e:
-                count += 1
-                if count >= 3:
-                    raise e
-                click.echo("Waiting for DB container to start")
-                time.sleep(0.3)
-        started = False
-    yield
-    # Stop the container if it wasn't already up and running
-    if not started:
-        run("docker compose stop db")
-
-
-def get_db_container_port():
-    """Get and return DB container port."""
-    result = run("docker compose port db 5432")
-    return str(int(result.split(":")[-1]))
-
-
-def execute_db_request(dbname, sql):
-    """Execute a SQL request on the given database."""
-    with ensure_db_container_up():
-        db_port = get_db_container_port()
-        dsn = f"host=localhost dbname={dbname} user=odoo password=odoo port={db_port}"
-        with psycopg2.connect(dsn) as db_connection:
-            with db_connection.cursor() as db_cursor:
-                db_cursor.execute(sql)
-                return db_cursor.fetchall()
-
-
-def get_db_list():
-    """Return the list of databases on container."""
-    sql = """
-        SELECT datname
-        FROM pg_database
-        WHERE datistemplate = false
-        AND datname not in ('postgres', 'odoo');
-    """
-    databases_fetch = execute_db_request("postgres", sql) or []
-    return [db_name_tuple[0] for db_name_tuple in databases_fetch]
 
 
 def expand_path(path):
@@ -112,78 +72,75 @@ def cli():
 
 
 @cli.command()
+@handle_exceptions()
 def list():
     """List all databases in the container."""
-    try:
-        db_list = get_db_list()
-        if not db_list:
-            click.echo("No databases found")
-            return
+    db_list = get_db_list()
+    if not db_list:
+        click.echo("No databases found")
+        return
 
-        click.echo("Databases:")
-        for db_name in sorted(db_list):
-            click.echo(f"  {db_name}")
-    except Exception as e:
-        raise click.ClickException(f"Failed to list databases: {e}") from e
+    click.echo("Databases:")
+    for db_name in sorted(db_list):
+        click.echo(f"  {db_name}")
 
 
 @cli.command("list-versions")
+@handle_exceptions()
 def list_versions():
     """Print a table of DBs with Marabunta version and install date."""
-    try:
-        res = {}
-        sql = """
-            SELECT date_done, number
-            FROM marabunta_version
-            ORDER BY date_done DESC
-            LIMIT 1;
-        """
+    res = {}
+    sql = """
+        SELECT date_done, number
+        FROM marabunta_version
+        ORDER BY date_done DESC
+        LIMIT 1;
+    """
 
-        db_list = get_db_list()
-        for db_name in db_list:
-            try:
-                version_fetch = execute_db_request(db_name, sql)
-                version_tuple = version_fetch[0] if version_fetch else (None, "unknown")
-            except psycopg2.ProgrammingError:
-                # Error expected when marabunta_version table does not exist
-                version_tuple = (None, "unknown")
-            res[db_name] = version_tuple
+    db_list = get_db_list()
+    for db_name in db_list:
+        try:
+            version_fetch = execute_db_request(db_name, sql)
+            version_tuple = version_fetch[0] if version_fetch else (None, "unknown")
+        except psycopg2.ProgrammingError:
+            # Error expected when marabunta_version table does not exist
+            version_tuple = (None, "unknown")
+        res[db_name] = version_tuple
 
-        if not res:
-            click.echo("No databases found")
-            return
+    if not res:
+        click.echo("No databases found")
+        return
 
-        # Calculate column sizes
-        size1 = max([len(x) for x in res.keys()]) + 1
-        size2 = max([len(str(x[1])) for x in res.values()]) + 1
-        size3 = 12  # len("2018-01-01") + margin
+    # Calculate column sizes
+    # TODO: Use rich for this
+    size1 = max([len(x) for x in res.keys()]) + 1
+    size2 = max([len(str(x[1])) for x in res.values()]) + 1
+    size3 = 12  # len("2018-01-01") + margin
 
-        # Print header
-        cols = (("DB Name", size1), ("Version", size2), ("Install date", size3))
-        thead = ""
-        line_width = 4  # spaces
-        for col_name, col_size in cols:
-            thead += "{:<{size}}".format(col_name, size=col_size + 1)
-            line_width += col_size
+    # Print header
+    cols = (("DB Name", size1), ("Version", size2), ("Install date", size3))
+    thead = ""
+    line_width = 4  # spaces
+    for col_name, col_size in cols:
+        thead += "{:<{size}}".format(col_name, size=col_size + 1)
+        line_width += col_size
 
-        click.echo(thead)
-        click.echo("=" * line_width)
+    click.echo(thead)
+    click.echo("=" * line_width)
 
-        # Print data
-        for db_name, version in sorted(
-            res.items(), key=lambda x: x[1][0] or datetime.min, reverse=True
-        ):
-            if version[0]:
-                time_str = version[0].strftime("%Y-%m-%d")
-            else:
-                time_str = "unknown"
-            click.echo(
-                "{:<{size1}} {:<{size2}} {:<12}".format(
-                    db_name, str(version[1]), time_str, size1=size1, size2=size2
-                )
+    # Print data
+    for db_name, version in sorted(
+        res.items(), key=lambda x: x[1][0] or datetime.min, reverse=True
+    ):
+        if version[0]:
+            time_str = version[0].strftime("%Y-%m-%d")
+        else:
+            time_str = "unknown"
+        click.echo(
+            "{:<{size1}} {:<{size2}} {:<12}".format(
+                db_name, str(version[1]), time_str, size1=size1, size2=size2
             )
-    except Exception as e:
-        raise click.ClickException(f"Failed to list versions: {e}") from e
+        )
 
 
 @cli.command("restore-dump")
@@ -295,8 +252,7 @@ def dump(db_name, path):
     try:
         path = expand_path(path)
 
-        with ensure_db_container_up():
-            db_port = get_db_container_port()
+        with ensure_db_container_up() as db_port:
             username = getpass.getuser()
             project_name = get_project_manifest_key("project_name")
             dump_name = f"{username}_{project_name}-{datetime.now().strftime('%Y%m%d-%H%M%S')}.pg"
@@ -332,8 +288,7 @@ def dump_and_share(platform, customer, env, db_name, tmp_path, keep_local_dump):
         tmp_path = expand_path(tmp_path)
 
         # Create local dump
-        with ensure_db_container_up():
-            db_port = get_db_container_port()
+        with ensure_db_container_up() as db_port:
             username = getpass.getuser()
             project_name = get_project_manifest_key("project_name")
             dump_name = f"{username}_{project_name}-{datetime.now().strftime('%Y%m%d-%H%M%S')}.pg"
