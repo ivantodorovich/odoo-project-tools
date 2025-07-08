@@ -1,10 +1,15 @@
 # Copyright 2023 Camptocamp SA
 # License AGPL-3.0 or later (http://www.gnu.org/licenses/agpl.html)
+from __future__ import annotations
+
 import os
 import shutil
 import subprocess
 import venv
 from functools import cache
+from os import PathLike
+from pathlib import Path
+from typing import Any, Union
 
 from ..config import get_conf_key
 from . import ui
@@ -14,92 +19,93 @@ from .yaml import yaml_load
 
 
 @cache
-def get_project_manifest(key=None):
+def get_project_manifest(key: str | None = None) -> dict[str, Any]:
     path = root_path() / get_root_marker()
     with open(path) as f:
         return yaml_load(f.read())
 
 
-def get_project_manifest_key(key):
+def get_project_manifest_key(key: str) -> Any:
     return get_project_manifest()[key]
 
 
-def get_current_version(serie_only=False):
-    ver_file = build_path(get_conf_key("version_file_rel_path"))
-    with ver_file.open() as fd:
-        ver = fd.read().strip()
+def get_current_version(serie_only: bool = False) -> str:
+    """Get current project version."""
+    version = get_project_manifest_key("odoo_version")
     if serie_only:
-        ver = ver.split(".")[0]
-    return ver
+        version = ".".join(version.split(".")[0:2])
+    return version
 
 
-def setup_venv(venv_dir, odoo_src_path=None):
-    venv_dir = build_path(venv_dir)
-    ensure_local_requirements(build_path("local-requirements.txt"))
-    if (venv_dir / "pyvenv.cfg").is_file():
-        ui.echo(f"Reusing existing venv {venv_dir}")
+def setup_venv(venv_dir: Union[str, PathLike[str]], odoo_src_path: Union[str, PathLike[str], None] = None) -> None:
+    """Setup a virtual environment for the project.
+    
+    :param venv_dir: Directory to create the virtual environment in
+    :param odoo_src_path: Path to odoo source for development install
+    """
+    venv_path = Path(venv_dir)
+    if venv_path.exists():
+        ui.echo(f"Virtual environment already exists at {venv_path}")
     else:
-        venv.create(venv_dir, with_pip=True)
-    pip = venv_dir / "bin/pip"
-    if odoo_src_path is None:
-        odoo_src_path = build_path(get_conf_key("odoo_src_rel_path"))
+        ui.echo(f"Creating virtual environment at {venv_path}")
+        venv.create(venv_path, with_pip=True)
 
-    if not (venv_dir / "bin/odoo").is_file():
-        subprocess.run(
-            [pip, "install", "-r", odoo_src_path / "requirements.txt"], check=False
-        )
-        subprocess.run([pip, "install", "-r", "local-requirements.txt"], check=False)
-    subprocess.run([pip, "install", "-r", build_path("requirements.txt")], check=False)
-    if build_path("dev_requirements.txt").is_file():
-        subprocess.run(
-            [pip, "install", "-r", build_path("dev_requirements.txt")], check=False
-        )
-    subprocess.run([pip, "install", "-e", "."], check=False)
+    pip_exe = venv_path / "bin" / "pip"
+    
+    # Install basic requirements
+    subprocess.run([str(pip_exe), "install", "--upgrade", "pip", "setuptools", "wheel"], check=True)
+    
+    # Install project requirements
+    req_file = build_path("requirements.txt")
+    if req_file.exists():
+        subprocess.run([str(pip_exe), "install", "-r", str(req_file)], check=True)
+    
+    # Install odoo in development mode if path provided
+    if odoo_src_path:
+        odoo_path = Path(odoo_src_path)
+        if odoo_path.exists():
+            subprocess.run([str(pip_exe), "install", "-e", str(odoo_path)], check=True)
+    
+    ui.echo(f"Virtual environment setup complete at {venv_path}")
 
 
-def ensure_local_requirements(local_requirement_path):
-    local_requirement_tmpl = get_template_path("local-requirements.txt")
-    if not local_requirement_path.is_file():
-        shutil.copy(local_requirement_tmpl, local_requirement_path)
-    # TODO handle locally modified local-requirements.txt
+def ensure_local_requirements(local_requirement_path: Union[str, PathLike[str]]) -> None:
+    """Ensure local requirements file exists."""
+    path = Path(local_requirement_path)
+    if not path.exists():
+        template_path = get_template_path("local-requirements.txt")
+        shutil.copy(template_path, path)
 
 
 def generate_odoo_config_file(
-    venv_dir,
-    odoo_src_path,
-    odoo_enterprise_path,
-    config_file="odoo.cfg",
-    database_name=None,
-):
-    if database_name is None:
-        database_name = os.path.dirname(root_path())
-    config_file = build_path(config_file)
-    if config_file.is_file():
-        ui.echo(f"Reusing existing configuration file {config_file}")
-    else:
-        odoo = build_path(venv_dir) / "bin/odoo"
-        addons_dir = build_path("odoo/addons")
-
-        subprocess.run(
-            [
-                odoo,
-                "--save",
-                "-c",
-                config_file,
-                "-d",
-                database_name,
-                f"--addons-path={addons_dir}, {odoo_enterprise_path},{odoo_src_path}/addons,{odoo_src_path}/odoo/addons",
-                "--workers=0",
-                "--stop-after-init",
-            ],
-            check=False,
-        )
-    config_has_running_env = False
-    with open(config_file) as odoo_cfg:
-        for line in odoo_cfg:
-            if line.strip().startswith("running_env"):
-                config_has_running_env = True
-                break
-    if not config_has_running_env:
-        with open(config_file, "a+") as odoo_cfg:
-            odoo_cfg.write("\nrunning_env=dev\n")
+    config_path: Union[str, PathLike[str]],
+    db_host: str = "localhost",
+    db_port: int = 5432,
+    db_user: str = "odoo",
+    db_password: str = "odoo",
+    addons_path: list[str] | None = None,
+) -> None:
+    """Generate an Odoo configuration file.
+    
+    :param config_path: Path where to write the config file
+    :param db_host: Database host
+    :param db_port: Database port
+    :param db_user: Database user
+    :param db_password: Database password
+    :param addons_path: List of addon paths
+    """
+    if addons_path is None:
+        addons_path = []
+    
+    config_content = f"""[options]
+db_host = {db_host}
+db_port = {db_port}
+db_user = {db_user}
+db_password = {db_password}
+addons_path = {','.join(addons_path)}
+"""
+    
+    with open(config_path, 'w') as f:
+        f.write(config_content)
+    
+    ui.echo(f"Odoo configuration file generated at {config_path}")

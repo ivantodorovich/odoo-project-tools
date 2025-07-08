@@ -5,14 +5,55 @@ Helper functions to get docker compose commands to run, handling the different
 command line options found in different versions of docker compose.
 """
 
+from __future__ import annotations
+
 import subprocess
 
 from . import os_exec
 
 
-def get_version():
+def get_version() -> list[int]:
     version = os_exec.run("docker compose version --short")
     return [int(x) for x in version.split(".") if x.isdigit()]
+
+
+def get_base_cmd() -> list[str]:
+    """Get the base docker compose command."""
+    version = get_version()
+    if version[0] >= 2:
+        return ["docker", "compose"]
+    else:
+        return ["docker-compose"]
+
+
+def build_cmd(service: str | None = None, **kwargs: str) -> list[str]:
+    """Build a docker compose command.
+    
+    :param service: Optional service name to target
+    :param kwargs: Additional docker compose options
+    """
+    cmd = get_base_cmd()
+    
+    # Add any additional options
+    for key, value in kwargs.items():
+        if value is True:
+            cmd.append(f"--{key.replace('_', '-')}")
+        elif value and value is not False:
+            cmd.extend([f"--{key.replace('_', '-')}", str(value)])
+    
+    if service:
+        cmd.append(service)
+    
+    return cmd
+
+
+def run_cmd(cmd: list[str], **kwargs: str) -> subprocess.CompletedProcess[bytes]:
+    """Run a docker compose command.
+    
+    :param cmd: The command to run
+    :param kwargs: Additional subprocess options
+    """
+    return subprocess.run(cmd, **kwargs)
 
 
 def up(override=None):

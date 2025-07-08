@@ -1,6 +1,8 @@
 # Copyright 2025 Camptocamp SA
 # License AGPL-3.0 or later (http://www.gnu.org/licenses/agpl.html)
 
+from __future__ import annotations
+
 from pathlib import Path
 
 from . import docker_compose, os_exec, ui
@@ -9,8 +11,8 @@ from . import docker_compose, os_exec, ui
 def create_db_from_db_dump(
     db_name: str,
     db_dump: str,
-    template_db_name: str = None,
-):
+    template_db_name: str | None = None,
+) -> None:
     """Restores a DB dump, optionally creates a DB template
 
     :param str db_name: name of the DB to create
@@ -24,7 +26,7 @@ def create_db_from_db_dump(
         _load_database(db_name, db_dump)
 
 
-def create_db_from_db_template(db_name: str, db_template: str):
+def create_db_from_db_template(db_name: str, db_template: str) -> None:
     """Creates a new DB from the given template
 
     :param str db_name: name of the DB to create
@@ -60,35 +62,79 @@ def create_db_from_local_files(
         ui.exit_msg("No database dump found")
 
 
-def _handle_database_template(template_db_name, database_dump):
-    # at this point we should have the database loaded under proper name
-    os_exec.run(docker_compose.drop_db(template_db_name))
-    os_exec.run(docker_compose.create_db(template_db_name))
-    try:
-        ui.echo(f"🥡 Creating template {template_db_name} from dump {database_dump}")
-        docker_compose.run_restore_db(template_db_name, database_dump)
-    except Exception:
-        # to ignore warnings on db restore
-        pass
+def _handle_database_template(template_db_name: str, db_dump: str) -> None:
+    """Creates or updates a database template."""
+    if _database_exists(template_db_name):
+        if ui.ask_confirmation(f"Template database {template_db_name} already exists. Overwrite?"):
+            _drop_database(template_db_name)
+        else:
+            return
+    _load_database(template_db_name, db_dump)
 
 
-def _restore_database_from_template(db_name, template):
-    ui.echo(f"🥡 Restore database {db_name} from template {template}")
-    os_exec.run(docker_compose.drop_db(db_name))
-    os_exec.run(docker_compose.restore_db_from_template(db_name, template))
+def _restore_database_from_template(db_name: str, template_db_name: str) -> None:
+    """Creates a new database from a template."""
+    if _database_exists(db_name):
+        if ui.ask_confirmation(f"Database {db_name} already exists. Overwrite?"):
+            _drop_database(db_name)
+        else:
+            return
+    
+    cmd = [
+        "docker", "compose", "exec", "-T", "db",
+        "createdb", "-T", template_db_name, db_name
+    ]
+    os_exec.run(cmd, check=True)
+    ui.echo(f"Database {db_name} created from template {template_db_name}")
 
 
-def _load_database(db_name, fname):
-    os_exec.run(docker_compose.drop_db(db_name))
-    os_exec.run(docker_compose.create_db(db_name))
+def _load_database(db_name: str, db_dump: str) -> None:
+    """Loads a database from a dump file."""
+    dump_path = Path(db_dump)
+    if not dump_path.exists():
+        ui.exit_msg(f"Database dump file not found: {db_dump}")
+    
+    if _database_exists(db_name):
+        if ui.ask_confirmation(f"Database {db_name} already exists. Overwrite?"):
+            _drop_database(db_name)
+        else:
+            return
+    
+    # Create the database
+    create_cmd = [
+        "docker", "compose", "exec", "-T", "db",
+        "createdb", db_name
+    ]
+    os_exec.run(create_cmd, check=True)
+    
+    # Restore the dump
+    restore_cmd = [
+        "docker", "compose", "exec", "-T", "db",
+        "pg_restore", "-d", db_name
+    ]
+    
+    with open(dump_path, 'rb') as dump_file:
+        import subprocess
+        result = subprocess.run(restore_cmd, stdin=dump_file, check=True)
+    
+    ui.echo(f"Database {db_name} loaded from {db_dump}")
 
-    if Path(fname).is_file():
-        try:
-            ui.echo(f"🥡 Restoring database {db_name} from dump {fname}")
-            docker_compose.run_restore_db(db_name, fname)
-        except Exception:
-            pass
-    else:
-        msg = f"❌ ** Database file {fname} for restore was not found**"
-        return ui.exit_msg(msg)
-    return fname
+
+def _database_exists(db_name: str) -> bool:
+    """Check if a database exists."""
+    cmd = [
+        "docker", "compose", "exec", "-T", "db",
+        "psql", "-lqt"
+    ]
+    result = os_exec.run(cmd)
+    return db_name in result
+
+
+def _drop_database(db_name: str) -> None:
+    """Drop a database."""
+    cmd = [
+        "docker", "compose", "exec", "-T", "db",
+        "dropdb", db_name
+    ]
+    os_exec.run(cmd, check=True)
+    ui.echo(f"Database {db_name} dropped")

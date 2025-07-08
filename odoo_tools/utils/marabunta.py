@@ -1,16 +1,22 @@
 # Copyright 2023 Camptocamp SA
 # License AGPL-3.0 or later (http://www.gnu.org/licenses/agpl.html)
+from __future__ import annotations
+
+from os import PathLike
+from pathlib import Path
+from typing import Any, Union
+
 from . import yaml
 
 
 class MarabuntaFileHandler:
-    def __init__(self, path_obj):
-        self.path_obj = path_obj
+    def __init__(self, path_obj: Union[str, PathLike[str], Path]) -> None:
+        self.path_obj = Path(path_obj)
 
-    def load(self):
-        return yaml.yaml_load(self.path_obj.open())
+    def load(self) -> dict[str, Any]:
+        return yaml.yaml_load(self.path_obj.open().read())
 
-    def update(self, version, run_click_hook="post"):
+    def update(self, version: str, run_click_hook: str = "post") -> None:
         data = self.load()
         versions = data["migration"]["versions"]
         version_item = [x for x in versions if x["version"] == version]
@@ -27,10 +33,10 @@ class MarabuntaFileHandler:
             operations.setdefault(run_click_hook, []).append(cmd)
         yaml.update_yml_file(self.path_obj, data)
 
-    def _make_click_odoo_update_cmd(self):
+    def _make_click_odoo_update_cmd(self) -> str:
         return "click-odoo-update"
 
-    def get_migration_file_modules(self):
+    def get_migration_file_modules(self) -> set[str]:
         """Read the migration.yml and get module list."""
         content = self.load()
         modules = set()

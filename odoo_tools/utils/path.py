@@ -1,15 +1,19 @@
 # Copyright 2023 Camptocamp SA
 # License AGPL-3.0 or later (http://www.gnu.org/licenses/agpl.html)
 
+from __future__ import annotations
+
 import os
 from contextlib import contextmanager
-from pathlib import PosixPath
+from os import PathLike
+from pathlib import Path, PosixPath
+from typing import Iterator, Union
 
 from ..exceptions import ProjectRootFolderNotFound
 from . import ui
 
 
-def get_root_marker():
+def get_root_marker() -> str:
     return ".cookiecutter.context.yml"
 
 
@@ -17,49 +21,54 @@ def get_root_marker():
 # to find out the root of the project w/o relying on marker files.
 
 
-def root_path(marker_file=get_root_marker(), raise_if_missing=True):
-    current_dir = (
-        os.getcwd()
-    )  # directory from where search for .cookiecutter.context.yml starts
-    max_depth = 5
-    while max_depth > 0:
-        file_list = os.listdir(current_dir)
-        parent_dir = os.path.dirname(current_dir)
-        if marker_file in file_list:
-            return PosixPath(current_dir)
-        elif current_dir == parent_dir:
-            break
-        else:
-            current_dir = parent_dir
-        max_depth -= 1
+def root_path(marker_file: str = get_root_marker(), raise_if_missing: bool = True) -> Path:
+    """Look for the root directory by looking for a marker file."""
+    cwd = Path.cwd()
+    for potential_root_path in [cwd, *cwd.parents]:
+        marker_file_path = potential_root_path / marker_file
+        if marker_file_path.exists():
+            return potential_root_path
     if raise_if_missing:
         raise ProjectRootFolderNotFound(
-            f"Missing {marker_file}. It's not a project directory. Exiting"
+            f"Could not find a '{marker_file}' file in {cwd} or any parent directories."
         )
+    return cwd
 
 
 # TODO: add test
-def build_path(path, from_root=True, from_file=None):
-    if not from_file and from_root:
-        base_path = root_path()
-    else:
-        if from_file is None:
-            from_file = __file__
-        base_path = PosixPath(from_file).parent.resolve()
-    return base_path / path
+def build_path(path: Union[str, PathLike[str]], from_root: bool = True, from_file: str | None = None) -> Path:
+    """Build a ``Path`` object relative to the root directory by default.
+
+    :param path: string or pathlike object to process
+    :param from_root: build relative to the detected project root directory
+    :param from_file: build relative to the provided file
+    """
+    path = Path(path)
+    if from_file:
+        return Path(from_file).parent / path
+    elif from_root and not path.is_absolute():
+        return root_path() / path
+    return path
 
 
 @contextmanager
-def cd(path):
+def cd(path: Union[str, PathLike[str]]) -> Iterator[None]:
+    """Context manager that temporary changes current directory.
+
+    Usage::
+
+        with cd("some/path"):
+            # do something
+    """
     prev = os.getcwd()
-    os.chdir(os.path.expanduser(path))
+    os.chdir(build_path(path))
     try:
         yield
     finally:
         os.chdir(prev)
 
 
-def make_dir(path_dir):
+def make_dir(path_dir: Union[str, PathLike[str]]) -> None:
     try:
         os.makedirs(path_dir)
     except OSError:

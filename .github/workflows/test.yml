@@ -24,3 +24,5 @@ jobs:
           pip install .[test]
       - name: Run tests
         run: coverage run --source=odoo_tools -m pytest -v tests && coverage report -m
+      - name: Type checking with mypy
+        run: mypy odoo_tools

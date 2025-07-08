@@ -1,14 +1,17 @@
 # Copyright 2023 Camptocamp SA
 # License AGPL-3.0 or later (http://www.gnu.org/licenses/agpl.html)
 
+from __future__ import annotations
+
 import os
 import shlex
 import shutil
 import subprocess
 import sys
+from typing import Union
 
 
-def get_venv():
+def get_venv() -> dict[str, str]:
     """Return an environment that includes the virtualenv in the PATH
 
     When running otools from a virtualenv, where dependencies console scripts
@@ -28,7 +31,7 @@ def get_venv():
     return env
 
 
-def run(cmd, drop_trailing_spaces=True, check=False):
+def run(cmd: Union[str, list[str]], drop_trailing_spaces: bool = True, check: bool = False) -> str:
     """Execute system commands and return output.
 
     :param cmd: the command to execute, as a string or a preparsed list
@@ -46,5 +49,5 @@ def run(cmd, drop_trailing_spaces=True, check=False):
     return output
 
 
-def has_exec(name):
+def has_exec(name: str) -> bool:
     return bool(shutil.which(name))
