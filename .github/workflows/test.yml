@@ -4,6 +4,7 @@ on: [pull_request, push]
 
 jobs:
   test:
+    name: Test ${{ matrix.python-version }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -20,9 +21,19 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install dependencies
-        run: |
-          pip install .[test]
+        run: pip install .[test]
       - name: Run tests
         run: coverage run --source=odoo_tools -m pytest -v tests && coverage report -m
+
+  mypy:
+    name: Type Checking
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: 3.13
+      - name: Install dependencies
+        run: pip install .[test]
       - name: Type checking with mypy
         run: mypy odoo_tools
