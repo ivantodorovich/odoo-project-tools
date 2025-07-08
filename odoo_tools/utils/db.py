@@ -37,8 +37,8 @@ def create_db_from_db_template(db_name: str, db_template: str) -> None:
 
 def create_db_from_local_files(
     db_name: str,
-    template_db_name: str = None,
-):
+    template_db_name: str | None = None,
+) -> None:
     """Checks current directory for ``.pg`` files and tries to restore one of them
 
     :param str db_name: name of the DB to create

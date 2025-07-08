@@ -8,10 +8,10 @@ import shlex
 import shutil
 import subprocess
 import sys
-from typing import Union
+from typing import Union, Mapping
 
 
-def get_venv() -> dict[str, str]:
+def get_venv() -> Mapping[str, str]:
     """Return an environment that includes the virtualenv in the PATH
 
     When running otools from a virtualenv, where dependencies console scripts
@@ -40,9 +40,8 @@ def run(cmd: Union[str, list[str]], drop_trailing_spaces: bool = True, check: bo
     if isinstance(cmd, str):
         cmd = shlex.split(cmd)
     res = subprocess.run(cmd, stdout=subprocess.PIPE, env=get_venv(), check=check)
-    if res.stdout is None:
-        output = ""
-    else:
+    output = ""
+    if res.stdout is not None:
         output = res.stdout.decode()
     if drop_trailing_spaces:
         output = output.strip()

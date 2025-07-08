@@ -43,7 +43,7 @@ def validate_config(config: dict[str, Any]) -> ProjectConfig:
         ) from None
 
 
-def load_config(config_path: PathLike = PROJ_CFG_FILE) -> ProjectConfig:
+def load_config(config_path: str | PathLike[str] = PROJ_CFG_FILE) -> ProjectConfig:
     """Loads the configuration file."""
     try:
         with open(build_path(config_path, from_root=True)) as f:
@@ -94,7 +94,7 @@ class ProjectConfig(BaseModel):
     """The path to the Marabunta migration file."""
 
 
-def get_conf_key(key):
+def get_conf_key(key: str) -> Any:
     """Get a configuration key.
 
     Deprecated: use `load_config() and config.key` instead.

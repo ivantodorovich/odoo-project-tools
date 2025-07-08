@@ -7,18 +7,18 @@ import configparser
 import pathlib
 import shutil
 import subprocess
-from importlib.resources import files
+from importlib.resources import files, abc
 from os import PathLike
 from typing import Any, Union
 
 PKG_NAME = "odoo_tools"
 
 
-def get_file_path(filepath: str) -> files:
+def get_file_path(filepath: str) -> abc.Traversable:
     return files(PKG_NAME) / filepath
 
 
-def get_template_path(filepath: str) -> files:
+def get_template_path(filepath: str) -> abc.Traversable:
     return get_file_path("templates/" + filepath)
 
 

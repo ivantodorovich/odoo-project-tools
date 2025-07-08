@@ -1,6 +1,7 @@
 # Copyright 2023 Camptocamp SA
 # License AGPL-3.0 or later (http://www.gnu.org/licenses/agpl.html)
 
+from __future__ import annotations
 
 from click.exceptions import Exit as _Exit
 
@@ -9,7 +10,7 @@ class PathNotFound(IOError):
     pass
 
 
-class ProjectRootFolderNotFound(Exception):
+class ProjectRootFolderNotFound(IOError):
     pass
 
 
@@ -18,10 +19,8 @@ class ProjectConfigException(Exception):
 
 
 class Exit(_Exit):
-    exit_code = 1
-
-    def __init__(self, msg):
-        super().__init__(self.exit_code)
+    def __init__(self, msg: str, exit_code: int = 1) -> None:
+        super().__init__(exit_code)
         self.message = msg
         print(self.message)
 

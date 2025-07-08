@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import re
-from typing import Union
 
 import requests
 
@@ -29,7 +28,8 @@ def get_last_pypi_version(pkg_name: str, odoo: bool = True) -> str:
         response = requests.get(uri)
         response.raise_for_status()
         data = response.json()
-        return data["info"]["version"]
+        version = data["info"]["version"]
+        return str(version)  # Ensure we return a string
     except (requests.RequestException, KeyError):
         # API will return 404 if package doesn't exist
         # KeyError if the response structure is unexpected

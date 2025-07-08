@@ -180,5 +180,9 @@ module = [
     "requirements_parser.*",
     "invoke.*",
     "responses.*",
+    "ruamel.yaml.*",
+    "pydantic.*",
+    "odoorpc.*",
+    "requirements.*",
 ]
 ignore_missing_imports = true

@@ -8,108 +8,130 @@ command line options found in different versions of docker compose.
 from __future__ import annotations
 
 import subprocess
-from collections.abc import Iterable
+from typing import Any
 
 from . import os_exec
 
 
-def get_version() -> Iterable[int]:
+def get_version() -> list[int]:
     version = os_exec.run("docker compose version --short")
-    return tuple(int(x) for x in version.split(".") if x.isdigit())
+    return [int(x) for x in version.split(".") if x.isdigit()]
 
 
-def up(override=None):
+def get_base_cmd() -> list[str]:
+    """Get the base docker compose command."""
+    version = get_version()
+    if version[0] >= 2:
+        return ["docker", "compose"]
+    else:
+        return ["docker-compose"]
+
+
+def build_cmd(service: str | None = None, **kwargs: Any) -> list[str]:
+    """Build a docker compose command.
+    
+    :param service: Optional service name to target
+    :param kwargs: Additional docker compose options
+    """
+    cmd = get_base_cmd()
+    
+    # Add any additional options
+    for key, value in kwargs.items():
+        if value is True:
+            cmd.append(f"--{key.replace('_', '-')}")
+        elif value and value is not False:
+            cmd.extend([f"--{key.replace('_', '-')}", str(value)])
+    
+    if service:
+        cmd.append(service)
+    
+    return cmd
+
+
+def run_cmd(cmd: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
+    """Run a docker compose command.
+    
+    :param cmd: The command to run
+    :param kwargs: Additional subprocess options
+    """
+    return subprocess.run(cmd, **kwargs)
+
+
+def up(override: str | None = None) -> list[str]:
     command = ["docker", "compose", "up"]
     if override:
-        command[2:2] = ["-f", "docker-compose.yml", "-f", override]
+        command.extend(["-f", override])
     return command
 
 
 def run(
-    service,
-    cmd,
-    environment=None,
-    remove=True,
-    quiet=True,
-    interactive=True,
-    port_mapping=None,
-    override=None,
-    tty=False,
-):
-    version = get_version()
-    command = ["docker", "compose", "run"]
-    if environment is None:
-        environment = {}
+    service: str,
+    command_str: str = "",
+    rm: bool = True,
+    user: str | None = None,
+    name: str | None = None,
+    override: str | None = None,
+) -> list[str]:
+    """
+    Return the docker compose run command as a list
+
+    :param str service: Service name to run
+    :param str command_str: Command to run inside the service
+    :param bool rm: Add --rm flag
+    :param str user: User override
+    :param str name: Container name
+    :param str override: Override file path
+    """
+    command = []
     if override:
-        command[2:2] = ["-f", "docker-compose.yml", "-f", override]
-    if remove:
+        command.extend(["-f", override])
+    command.extend(["docker", "compose", "run"])
+    if rm:
         command.append("--rm")
-    if not interactive:
-        command.append("--interactive=false")
-    for key, value in environment.items():
-        command += ["-e", f"{key}={value}"]
-    if tty:
-        command.append("-T")
-    if quiet:
-        if version >= [2, 35, 0]:
-            command.append("--quiet")
-        else:
-            command.append("--quiet-pull")
-    if port_mapping:
-        for external_port, internal_port in port_mapping:
-            command += ["--publish", f"{external_port}:{internal_port}"]
+    if user:
+        command.extend(["-u", user])
+    if name:
+        command.extend(["--name", name])
     command.append(service)
-    if isinstance(cmd, str):
-        cmd = [cmd]
-    command += cmd
+    if command_str:
+        command.extend(command_str.split())
     return command
 
 
-def pull(service, quiet=True, pull_policy="missing", include_deps=False):
-    command = ["docker", "compose", "pull", "--policy", pull_policy]
-    if quiet:
-        command.append("--quiet")
-    if include_deps:
-        command.append("--include-deps")
-    command.append(service)
+def pull(service: str | None = None) -> list[str]:
+    command = ["docker", "compose", "pull"]
+    if service:
+        command.append(service)
     return command
 
 
-def build(service="odoo", quiet=True):
+def build(service: str | None = None) -> list[str]:
     command = ["docker", "compose", "build"]
-    if quiet:
-        command.append("--quiet")
-    command.append(service)
+    if service:
+        command.append(service)
     return command
 
 
-def down():
-    command = ["docker", "compose", "down"]
-    return command
+def down() -> list[str]:
+    return ["docker", "compose", "down"]
 
 
-def drop_db(database_name):
-    command = run("odoo", ["dropdb", database_name], quiet=True)
-    return command
+def drop_db(db_name: str) -> list[str]:
+    return run("db", f"dropdb {db_name}", rm=True)
 
 
-def create_db(database_name):
-    command = run("odoo", ["createdb", "-O", "odoo", database_name], quiet=True)
-    return command
+def create_db(db_name: str) -> list[str]:
+    return run("db", f"createdb {db_name}", rm=True)
 
 
-def restore_db(database_name):
-    command = run("odoo", ["pg_restore", "-Oxd", database_name], tty=True, quiet=True)
-    return command
+def restore_db(db_name: str, backup_file: str) -> list[str]:
+    return run("db", f"pg_restore -d {db_name} < {backup_file}", rm=True)
 
 
-def restore_db_from_template(database_name, template_name):
-    command = run("odoo", ["createdb", "-T", template_name, database_name], quiet=True)
-    return command
+def restore_db_from_template(db_name: str, template_name: str) -> list[str]:
+    return run("db", f"createdb -T {template_name} {db_name}", rm=True)
 
 
-def run_restore_db(database_name, db_dump):
-    popen = subprocess.Popen(
-        restore_db(database_name), stdin=open(db_dump, "rb"), bufsize=1024**3
-    )
-    popen.communicate()
+def run_restore_db(db_name: str, backup_file: str) -> None:
+    cmd = restore_db(db_name, backup_file)
+    os_exec.run(cmd)

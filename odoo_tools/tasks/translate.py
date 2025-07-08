@@ -1,8 +1,11 @@
 # Copyright 2016 Camptocamp SA
 # License AGPL-3.0 or later (http://www.gnu.org/licenses/agpl.html)
 
+from __future__ import annotations
+
 import glob
 import os
+from typing import Any
 
 from invoke import task
 
@@ -10,7 +13,7 @@ from ..utils.path import build_path
 
 
 @task(default=True)
-def generate(ctx, addon_path, update_po=True):
+def generate(ctx: Any, addon_path: str, update_po: bool = True) -> None:
     """Generate pot template and merge it in language files
 
     Example:

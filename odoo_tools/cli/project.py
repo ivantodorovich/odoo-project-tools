@@ -2,6 +2,7 @@
 # License AGPL-3.0 or later (http://www.gnu.org/licenses/agpl.html)
 
 import os
+from pathlib import Path
 
 import click
 
@@ -203,8 +204,13 @@ def checkout_local_odoo(
         ui.exit_msg("Unable to find the commit hash of odoo enterprise")
 
     if venv:
-        setup_venv(venv_path)
-        generate_odoo_config_file(venv_path, odoo_src_dest, enterprise_src_dest)
+        venv_path_obj = Path(venv_path)
+        setup_venv(venv_path_obj)
+        config_path = venv_path_obj / "odoo.cfg"
+        generate_odoo_config_file(
+            config_path,
+            addons_path=[str(odoo_src_dest), str(enterprise_src_dest)],
+        )
         ui.echo("\nOdoo is now installed and available in `{venv}/bin/odoo`")
     else:
         ui.echo(

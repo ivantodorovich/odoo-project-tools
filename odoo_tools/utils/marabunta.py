@@ -14,23 +14,45 @@ class MarabuntaFileHandler:
         self.path_obj = Path(path_obj)
 
     def load(self) -> dict[str, Any]:
-        return yaml.yaml_load(self.path_obj.open().read())
+        with self.path_obj.open() as f:
+            content = f.read()
+        result = yaml.yaml_load(content)
+        if result is None:
+            return {}
+        return dict(result)  # Ensure it's a dict
 
     def update(self, version: str, run_click_hook: str = "post") -> None:
         data = self.load()
-        versions = data["migration"]["versions"]
-        version_item = [x for x in versions if x["version"] == version]
-        if version_item:
-            version_item = version_item[0]
-        else:
+        versions = data.get("migration", {}).get("versions", [])
+        version_item = None
+        for item in versions:
+            if item.get("version") == version:
+                version_item = item
+                break
+        
+        if version_item is None:
             version_item = {"version": version}
             versions.append(version_item)
+            # Ensure migration structure exists
+            if "migration" not in data:
+                data["migration"] = {}
+            data["migration"]["versions"] = versions
+        
         if not version_item.get("operations"):
             version_item["operations"] = {}
-        operations = version_item["operations"]
+        
+        # Ensure operations is a dict
+        operations_obj = version_item["operations"]
+        if not isinstance(operations_obj, dict):
+            operations_obj = {}
+            version_item["operations"] = operations_obj
+        
+        operations: dict[str, list[str]] = operations_obj
         cmd = self._make_click_odoo_update_cmd()
-        if cmd not in operations.get(run_click_hook, []):
-            operations.setdefault(run_click_hook, []).append(cmd)
+        if run_click_hook not in operations:
+            operations[run_click_hook] = []
+        if cmd not in operations[run_click_hook]:
+            operations[run_click_hook].append(cmd)
         yaml.update_yml_file(self.path_obj, data)
 
     def _make_click_odoo_update_cmd(self) -> str:

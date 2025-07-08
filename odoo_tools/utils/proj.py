@@ -22,7 +22,11 @@ from .yaml import yaml_load
 def get_project_manifest(key: str | None = None) -> dict[str, Any]:
     path = root_path() / get_root_marker()
     with open(path) as f:
-        return yaml_load(f.read())
+        content = f.read()
+        data = yaml_load(content)
+        if data is None:
+            return {}
+        return dict(data)  # Ensure it's a dict
 
 
 def get_project_manifest_key(key: str) -> Any:
@@ -31,7 +35,10 @@ def get_project_manifest_key(key: str) -> Any:
 
 def get_current_version(serie_only: bool = False) -> str:
     """Get current project version."""
-    version = get_project_manifest_key("odoo_version")
+    version_data = get_project_manifest_key("odoo_version")
+    if version_data is None:
+        return "0.0"
+    version = str(version_data)  # Ensure it's a string
     if serie_only:
         version = ".".join(version.split(".")[0:2])
     return version
