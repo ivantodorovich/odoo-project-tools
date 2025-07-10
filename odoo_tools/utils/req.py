@@ -1,9 +1,13 @@
 # Copyright 2023 Camptocamp SA
 # License AGPL-3.0 or later (http://www.gnu.org/licenses/agpl.html)
 
+from __future__ import annotations
+
 import fileinput
 import operator
 import os
+from pathlib import Path
+from typing import Any, Callable
 
 import requirements
 
@@ -16,15 +20,15 @@ from .pypi import pkg_name_to_odoo_name
 # https://requirements-parser.readthedocs.io/en/latest/
 
 
-def get_project_req():
+def get_project_req() -> Path:
     return root_path() / "requirements.txt"
 
 
-def get_project_dev_req():
+def get_project_dev_req() -> Path:
     return root_path() / "dev_requirements.txt"
 
 
-def get_requirements(req_filepath=None):
+def get_requirements(req_filepath: Path | None = None) -> dict[str, Any]:
     req_filepath = req_filepath or get_project_req()
     res = {}
     with open(req_filepath) as fd:
@@ -33,19 +37,20 @@ def get_requirements(req_filepath=None):
     return res
 
 
-def get_addon_requirement(addon, req_filepath=None):
+def get_addon_requirement(addon: str, req_filepath: Path | None = None) -> Any | None:
     req_filepath = req_filepath or get_project_req()
     with open(req_filepath) as fd:
         for req in requirements.parse(fd):
             if req.name in (addon, pkg_name_to_odoo_name(addon)):
                 return req
+    return None
 
 
-def make_requirement_line(pkg_name, version=None):
+def make_requirement_line(pkg_name: str, version: str | None = None) -> str:
     return pkg_name + (f" == {version}" if version else "")
 
 
-def make_requirement_line_for_pr(pkg_name, pr, use_wool=False):
+def make_requirement_line_for_pr(pkg_name: str, pr: str, use_wool: bool = False) -> str:
     mod_name = pkg_name_to_odoo_name(pkg_name)
     parts = parse_github_url(pr)
     uri = "git+https://github.com/{upstream}/{repo_name}@refs/{entity_type}/{entity_id}/head".format(
@@ -55,7 +60,7 @@ def make_requirement_line_for_pr(pkg_name, pr, use_wool=False):
     return f"{pkg_name} @ {uri}#subdirectory={subdirectory}"
 
 
-def modname_to_installation_subdirectory(mod_name: str, use_wool: bool):
+def modname_to_installation_subdirectory(mod_name: str, use_wool: bool) -> str:
     if use_wool:
         subdirectory = f"{mod_name}"
     else:
@@ -64,8 +69,8 @@ def modname_to_installation_subdirectory(mod_name: str, use_wool: bool):
 
 
 def make_requirement_line_for_proj_fork(
-    pkg_name, repo_name, branch, upstream=None, use_wool=False
-):
+    pkg_name: str, repo_name: str, branch: str, upstream: str | None = None, use_wool: bool = False
+) -> str:
     upstream = upstream or get_conf_key("company_git_remote")
     mod_name = pkg_name_to_odoo_name(pkg_name)
     parts = {
@@ -79,8 +84,8 @@ def make_requirement_line_for_proj_fork(
 
 
 def make_requirement_line_for_editable(
-    pkg_name, pr=None, repo_name=None, dev_src=None, use_wool=False
-):
+    pkg_name: str, pr: str | None = None, repo_name: str | None = None, dev_src: str | None = None, use_wool: bool = False
+) -> str:
     assert pr or repo_name
     if pr:
         parts = parse_github_url(pr)
@@ -92,8 +97,8 @@ def make_requirement_line_for_editable(
 
 
 def add_requirement(
-    pkg_name, version=None, req_filepath=None, pr=None, editable=False, use_wool=None
-):
+    pkg_name: str, version: str | None = None, req_filepath: Path | None = None, pr: str | None = None, editable: bool = False, use_wool: bool | None = None
+) -> None:
     req_filepath = req_filepath or get_project_req()
     if use_wool is None:
         # assume a project on Odoo 17 is using wool
@@ -111,12 +116,12 @@ def add_requirement(
 
 
 def replace_requirement(
-    pkg_name, version=None, req_filepath=None, pr=None, editable=False, use_wool=None
-):
+    pkg_name: str, version: str | None = None, req_filepath: Path | None = None, pr: str | None = None, editable: bool = False, use_wool: bool | None = None
+) -> None:
     req_filepath = req_filepath or get_project_req()
     if use_wool is None:
         # assume a project on Odoo 17 is using wool
-        use_wool = version >= "17"
+        use_wool = version is not None and version >= "17"
     if pr:
         handler = make_requirement_line_for_pr
         if editable:
@@ -136,7 +141,7 @@ def replace_requirement(
         ui.echo(line)
 
 
-OP = {
+OP: dict[str, Callable[[Any, Any], bool]] = {
     "==": operator.eq,
     "<=": operator.le,
     ">=": operator.ge,
@@ -145,7 +150,7 @@ OP = {
 }
 
 
-def allowed_version(req, check_version):
+def allowed_version(req: Any, check_version: str) -> bool:
     for _op, version in req.specs:
         op = OP[_op]
         if not op(check_version, version):

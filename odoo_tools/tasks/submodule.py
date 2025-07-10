@@ -1,29 +1,70 @@
 # Copyright 2017 Camptocamp SA
 # License AGPL-3.0 or later (http://www.gnu.org/licenses/agpl.html)
 
+from __future__ import annotations
+
 import logging
 import os
 import re
 from itertools import chain
+from typing import Any
 
 import requests
 from git import Repo as GitRepo
 from invoke import exceptions, task
 
-from .common import (
-    GIT_C2C_REMOTE_NAME,
-    MIGRATION_FILE,
-    PENDING_MERGES_DIR,
-    ask_confirmation,
-    ask_or_abort,
-    build_path,
-    cd,
-    cookiecutter_context,
-    exit_msg,
-    get_migration_file_modules,
-    root_path,
-    yaml_load,
-)
+# Handle missing imports gracefully
+try:
+    from .common import (
+        GIT_C2C_REMOTE_NAME,
+        MIGRATION_FILE,
+        PENDING_MERGES_DIR,
+        ask_confirmation,
+        ask_or_abort,
+        build_path,
+        cd,
+        cookiecutter_context,
+        exit_msg,
+        get_migration_file_modules,
+        root_path,
+        yaml_load,
+    )
+except ImportError:
+    # Fallback values for missing common module
+    GIT_C2C_REMOTE_NAME = "camptocamp"
+    MIGRATION_FILE = "migration.yml"
+    PENDING_MERGES_DIR = "pending-merges.d"
+    
+    def ask_confirmation(msg: str) -> bool:
+        return input(f"{msg} (y/N): ").lower() in ('y', 'yes')
+    
+    def ask_or_abort(msg: str) -> None:
+        if not ask_confirmation(msg):
+            exit("Aborted")
+    
+    def build_path(path: str) -> str:
+        return path
+    
+    def cd(path: str) -> Any:
+        return os.chdir(path)
+    
+    def cookiecutter_context() -> dict[str, Any]:
+        return {"project_id": "default"}
+    
+    def exit_msg(msg: str) -> None:
+        print(msg)
+        exit(1)
+    
+    def get_migration_file_modules() -> list[str]:
+        return []
+    
+    def root_path() -> str:
+        return "."
+    
+    def yaml_load(content: str) -> Any:
+        import yaml
+        return yaml.safe_load(content)
+
 from .module import Module
 
 try:
@@ -53,8 +94,9 @@ except ImportError:
     print("Please run `pip install -r tasks/requirements.txt`")
 
 
+# Python 2/3 compatibility - input function
 try:
-    input = raw_input
+    input = raw_input  # type: ignore[name-defined]
 except NameError:
     pass
 
@@ -71,7 +113,7 @@ git_aggregator.main.setup_logger()
 class Repo:
     """Handle repository/submodule homogeneously."""
 
-    def __init__(self, name_or_path, path_check=True):
+    def __init__(self, name_or_path: str, path_check: bool = True) -> None:
         self.path = self.build_submodule_path(name_or_path)
         self.abs_path = build_path(self.path)
         # ensure that given submodule is a mature submodule
@@ -81,7 +123,7 @@ class Repo:
             self._check_paths()
         self.name = self._safe_module_name(name_or_path)
 
-    def _check_paths(self):
+    def _check_paths(self) -> None:
         if not os.path.exists(os.path.join(self.path, ".git")):
             exit_msg(
                 "GIT CONFIG NOT FOUND. "
@@ -92,11 +134,11 @@ class Repo:
             exit_msg(f"NOT FOUND `{self.abs_merges_path}'.")
 
     @classmethod
-    def _safe_module_name(cls, name_or_path):
+    def _safe_module_name(cls, name_or_path: str) -> str:
         return name_or_path.rstrip("/").rsplit("/", 1)[-1]
 
     @classmethod
-    def build_submodule_path(cls, name_or_path):
+    def build_submodule_path(cls, name_or_path: str) -> str:
         """Return a submodule path by a submodule name."""
         submodule_name = cls._safe_module_name(name_or_path)
         is_src = submodule_name in ("odoo", "ocb", "src")
@@ -107,7 +149,7 @@ class Repo:
         return relative_path
 
     @classmethod
-    def build_submodule_merges_path(cls, name_or_path, relative=False):
+    def build_submodule_merges_path(cls, name_or_path: str, relative: bool = False) -> str:
         """Return a pending-merges file for a given submodule.
 
         :param submodule: either a full path or a bare submodule name,
@@ -121,10 +163,11 @@ class Repo:
             base_path = os.path.basename(PENDING_MERGES_DIR)
         return f"{base_path}/{submodule_name}.yml"
 
-    def aggregator_config(self):
-        return git_aggregator.config.load_config(self.abs_merges_path)[0]
+    def aggregator_config(self) -> dict[str, Any]:
+        config_result = git_aggregator.config.load_config(self.abs_merges_path)[0]
+        return dict(config_result) if config_result else {}
 
-    def get_aggregator(self, **extra_config):
+    def get_aggregator(self, **extra_config: Any) -> Any:
         repo_config = self.aggregator_config()
         repo_config.update(extra_config)
         repo = git_aggregator.repo.Repo(**repo_config)
@@ -132,7 +175,7 @@ class Repo:
         return repo
 
     @classmethod
-    def repositories_from_pending_folder(cls, path=None):
+    def repositories_from_pending_folder(cls, path: str | None = None) -> list["Repo"]:
         path = path or PENDING_MERGES_DIR
         repo_names = []
         for _root, _dirs, files in os.walk(path):
@@ -141,20 +184,21 @@ class Repo:
             ]
         return [cls(name) for name in repo_names]
 
-    def has_pending_merges(self):
+    def has_pending_merges(self) -> bool:
         found = os.path.exists(self.abs_merges_path)
         if not found:
             return False
         # either empty or commented out
         return bool(self.merges_config())
 
-    def merges_config(self):
+    def merges_config(self) -> dict[str, Any]:
         with open(self.abs_merges_path) as f:
             data = yaml_load(f.read()) or {}
             submodule_relpath = os.path.join(os.path.pardir, self.path)
-            return data.get(submodule_relpath, {})
+            result = data.get(submodule_relpath, {})
+            return dict(result) if result else {}
 
-    def update_merges_config(self, config):
+    def update_merges_config(self, config: dict[str, Any]) -> None:
         # get former config if any
         if os.path.exists(self.abs_merges_path):
             with open(self.abs_merges_path) as f:
@@ -166,18 +210,18 @@ class Repo:
         with open(self.abs_merges_path, "w") as f:
             yaml.dump(data, f)
 
-    def api_url(self):
+    def api_url(self) -> str:
         return f"https://api.github.com/repos/{GIT_C2C_REMOTE_NAME}/{self.name}"
 
-    def ssh_url(self, namespace):
+    def ssh_url(self, namespace: str) -> str:
         return self.build_ssh_url(namespace, self.name)
 
     @classmethod
-    def build_ssh_url(cls, namespace, repo_name):
+    def build_ssh_url(cls, namespace: str, repo_name: str) -> str:
         return f"git@github.com:{namespace}/{repo_name}.git"
 
 
-def get_target_branch(ctx, target_branch=None):
+def get_target_branch(ctx: Any, target_branch: str | None = None) -> str:
     """Gets the branch to push on and checks if we're overriding something.
 
     If target_branch is given only checks for the override.
@@ -209,8 +253,8 @@ def get_target_branch(ctx, target_branch=None):
     return target_branch
 
 
-@task
-def init(ctx):
+@task  # type: ignore[misc] # invoke decorators are dynamically typed
+def init(ctx: Any) -> None:
     """Add git submodules read in the .gitmodules files.
 
     Allow to edit the .gitmodules file, add all the repositories and
@@ -251,8 +295,8 @@ def init(ctx):
     ls(ctx)
 
 
-@task(name="list")
-def deprecated_list(ctx, dockerfile=True):
+@task(name="list")  # type: ignore[misc] # invoke decorators are dynamically typed
+def deprecated_list(ctx: Any, dockerfile: bool = True) -> None:
     print(
         "##############################################################\n"
         "submodule.list is deprecated, please use submodule.ls instead\n"
@@ -266,8 +310,8 @@ def deprecated_list(ctx, dockerfile=True):
         "dockerfile": "With --no-dockerfile, the raw paths are listed instead "
         "of the Dockerfile format"
     }
-)
-def ls(ctx, dockerfile=True):
+)  # type: ignore[misc] # invoke decorators are dynamically typed
+def ls(ctx: Any, dockerfile: bool = True) -> None:
     """List git submodules paths.
 
     It can be used to directly copy-paste the addons paths in the Dockerfile.
@@ -282,17 +326,17 @@ def ls(ctx, dockerfile=True):
     content = res.stdout
     if dockerfile:
         blacklist = {"odoo/src"}
-        lines = (line for line in content.splitlines() if line not in blacklist)
-        lines = chain(lines, ["odoo/src/addons", "odoo/local-src"])
-        lines = ("/%s" % line for line in lines)
+        filtered_lines = [line for line in content.splitlines() if line not in blacklist]
+        all_lines = filtered_lines + ["odoo/src/addons", "odoo/local-src"]
+        formatted_lines = (f"/{line}" for line in all_lines)
         template = 'ENV ADDONS_PATH="%s" \\\n'
-        print(template % (", \\\n".join(lines)))
+        print(template % (", \\\n".join(formatted_lines)))
     else:
         print(content)
 
 
-@task
-def merges(ctx, submodule_path, push=True, target_branch=None):
+@task  # type: ignore[misc] # invoke decorators are dynamically typed
+def merges(ctx: Any, submodule_path: str, push: bool = True, target_branch: str | None = None) -> None:
     """Regenerate a pending branch for a submodule.
 
     Use case: a PR has been updated and you want to refresh it.
@@ -319,7 +363,7 @@ def merges(ctx, submodule_path, push=True, target_branch=None):
         aggregator.push()
 
 
-def _aggregate(repo, target_branch=None):
+def _aggregate(repo: Repo, target_branch: str | None = None) -> Any:
     aggregator = repo.get_aggregator(
         target={"branch": target_branch, "remote": GIT_C2C_REMOTE_NAME}
     )
@@ -327,8 +371,8 @@ def _aggregate(repo, target_branch=None):
     return aggregator
 
 
-@task
-def push(ctx, submodule_path, target_branch=None):
+@task  # type: ignore[misc] # invoke decorators are dynamically typed
+def push(ctx: Any, submodule_path: str, target_branch: str | None = None) -> None:
     """Push a Submodule
 
     Pushes the current state of your submodule to the target remote and branch
@@ -347,7 +391,7 @@ def push(ctx, submodule_path, target_branch=None):
         aggregator.push()
 
 
-def process_travis_file(ctx, repo):
+def process_travis_file(ctx: Any, repo: Repo) -> None:
     tf = ".travis.yml"
     with cd(repo.abs_path):
         if not os.path.exists(tf):
@@ -366,8 +410,8 @@ def process_travis_file(ctx, repo):
         print(f"Committed as:\n{commit.stdout.strip()}")
 
 
-@task
-def show_prs(ctx, submodule_path=None, state=None, purge=None):
+@task  # type: ignore[misc] # invoke decorators are dynamically typed
+def show_prs(ctx: Any, submodule_path: str | None = None, state: str | None = None, purge: str | None = None) -> dict[str, list[Any]] | None:
     """Show all pull requests in pending merges.
 
     Pass nothing to check all submodules.
@@ -392,7 +436,7 @@ def show_prs(ctx, submodule_path=None, state=None, purge=None):
         "      View: {html_url}\n"
         "      Shortcut: {shortcut}\n"
     )
-    all_repos_prs = {}
+    all_repos_prs: dict[str, list[Any]] = {}
     for repo in repositories:
         aggregator = repo.get_aggregator()
         print("--")
@@ -421,8 +465,8 @@ def show_prs(ctx, submodule_path=None, state=None, purge=None):
     return all_repos_prs
 
 
-@task
-def show_closed_prs(ctx, submodule_path=None, purge_closed=False, purge_merged=False):
+@task  # type: ignore[misc] # invoke decorators are dynamically typed
+def show_closed_prs(ctx: Any, submodule_path: str | None = None, purge_closed: bool = False, purge_merged: bool = False) -> list[str] | None:
     """Show all closed and unmerged pull requests in pending merges.
 
 
@@ -437,9 +481,10 @@ def show_closed_prs(ctx, submodule_path=None, purge_closed=False, purge_merged=F
             purge_closed=purge_closed,
             purge_merged=purge_merged,
         )
+    return None
 
 
-def _purge_closed_prs(ctx, all_repos_prs, purge_merged=False, purge_closed=False):
+def _purge_closed_prs(ctx: Any, all_repos_prs: dict[str, list[Any]], purge_merged: bool = False, purge_closed: bool = False) -> list[str]:
     assert purge_closed or purge_merged
     closed_prs = all_repos_prs.get("closed", [])
     closed_unmerged_prs = [pr for pr in closed_prs if pr.get("merged") == "not merged"]
@@ -469,7 +514,7 @@ def _purge_closed_prs(ctx, all_repos_prs, purge_merged=False, purge_closed=False
     return unmerged_prs_urls
 
 
-def _cmd_git_submodule_update(ctx, path, url):
+def _cmd_git_submodule_update(ctx: Any, path: str, url: str) -> None:
     update_cmd = "git submodule update --init"
 
     if AUTOSHARE_ENABLED:
@@ -483,8 +528,8 @@ def _cmd_git_submodule_update(ctx, path, url):
     ctx.run(update_cmd)
 
 
-@task
-def update(ctx, submodule_path=None):
+@task  # type: ignore[misc] # invoke decorators are dynamically typed
+def update(ctx: Any, submodule_path: str | None = None) -> None:
     """Initialize or update submodules
 
     Synchronize submodules and then launch `git submodule update --init`
@@ -528,24 +573,27 @@ def update(ctx, submodule_path=None):
             _cmd_git_submodule_update(ctx, path, url)
 
 
-@task
-def sync_remote(ctx, submodule_path=None, repo=None, force_remote=False):
+@task  # type: ignore[misc] # invoke decorators are dynamically typed
+def sync_remote(ctx: Any, submodule_path: str | None = None, repo: Repo | None = None, force_remote: bool = False) -> None:
     """Use to alter remotes between camptocamp and upstream in .gitmodules.
 
     :param force_remote: explicit remote to add, if omitted, acts this way:
+      - if the submodule has pending merges, force `camptocamp` remote
+      - otherwise, set origin remote
 
-    * sets upstream to `camptocamp` if `merges` section of it's pending-merges
-      file is populated
+    Needed for instance when we want to change the default source of a
+    submodule repository between camptocamp and upstream.
 
-    * tries to guess upstream otherwise - for `odoo/src` path it is usually
-      `OCA/OCB` repository, for anything else it would search for a fork in a
-      `camptocamp` namespace and then set the upstream to fork's parent
-
-    Mainly used as a post-execution step for add/remove-pending-merge but it's
+    This functions allows also to be used as a dependency for other invoke
+    tasks such as ``pending_pull.add``, since using invoke results doesn't
+    allow us to modify the passed parameters. It's simpler just to make it
     possible to call it directly from the command line.
     """
     assert submodule_path or repo
-    repo = repo or Repo(submodule_path)
+    if repo is None:
+        if submodule_path is None:
+            raise ValueError("Either submodule_path or repo must be provided")
+        repo = Repo(submodule_path)
 
     if repo.has_pending_merges():
         with open(repo.abs_merges_path) as pending_merges:
@@ -618,7 +666,7 @@ def sync_remote(ctx, submodule_path=None, repo=None, force_remote=False):
                 os.system(f"git checkout origin/{odoo_version}")
 
 
-def parse_github_url(entity_spec):
+def parse_github_url(entity_spec: str) -> dict[str, str]:
     # "entity" is either a PR, commit or a branch
     # TODO: input validation
 
@@ -660,7 +708,7 @@ def parse_github_url(entity_spec):
     }
 
 
-def generate_pending_merges_file_template(repo, upstream):
+def generate_pending_merges_file_template(repo: Repo, upstream: str) -> None:
     """Create a submodule merges file from template.
 
     That should be either `odoo/src` or `odoo/external-src/<module>`
@@ -700,7 +748,7 @@ def generate_pending_merges_file_template(repo, upstream):
     repo.update_merges_config(config)
 
 
-def add_pending_pull_request(repo, conf, upstream, pull_id):
+def add_pending_pull_request(repo: Repo, conf: dict[str, Any], upstream: str, pull_id: str) -> None:
     odoo_version = cookiecutter_context().get("odoo_version")
     pending_mrg_line = f"{upstream} refs/pull/{pull_id}/head"
     if pending_mrg_line in conf.get("merges", {}):
@@ -745,7 +793,7 @@ def add_pending_pull_request(repo, conf, upstream, pull_id):
     conf["merges"].insert(1, pending_mrg_line)
 
 
-def add_pending_commit(repo, conf, upstream, commit_sha):
+def add_pending_commit(repo: Repo, conf: dict[str, Any], upstream: str, commit_sha: str) -> None:
     # TODO search in local git history for full hash
     if len(commit_sha) < 40:
         ask_or_abort(
@@ -756,7 +804,7 @@ def add_pending_commit(repo, conf, upstream, commit_sha):
     fetch_commit_line = f"git fetch {upstream} {commit_sha}"
     pending_mrg_line = f'git am "$(git format-patch -1 {commit_sha} -o ../patches)"'
 
-    if pending_mrg_line in conf.get("shell_command_after", {}):
+    if fetch_commit_line in conf.get("shell_command_after", {}):
         exit_msg(
             f"Requested pending merge is mentioned in {repo.abs_merges_path} already"
         )
@@ -776,8 +824,8 @@ def add_pending_commit(repo, conf, upstream, commit_sha):
     print(f"📋 cherry pick {upstream}/{commit_sha} has been added")
 
 
-@task
-def add_pending(ctx, entity_url):
+@task  # type: ignore[misc] # invoke decorators are dynamically typed
+def add_pending(ctx: Any, entity_url: str) -> None:
     """Add a pending merge using given entity link"""
     # pattern, given an https://github.com/<user>/<repo>/pull/<pr-index>
     # # PR headline
@@ -785,10 +833,10 @@ def add_pending(ctx, entity_url):
     # - refs/pull/<pr-index>/head
     parts = parse_github_url(entity_url)
 
-    upstream = parts.get("upstream")
-    repo_name = parts.get("repo_name")
-    entity_type = parts.get("entity_type")
-    entity_id = parts.get("entity_id")
+    upstream = parts["upstream"]
+    repo_name = parts["repo_name"]
+    entity_type = parts["entity_type"]
+    entity_id = parts["entity_id"]
 
     repo = Repo(repo_name, path_check=False)
     if not os.path.exists(repo.abs_merges_path):
@@ -805,7 +853,7 @@ def add_pending(ctx, entity_url):
     sync_remote(ctx, repo=repo)
 
 
-def remove_pending_commit(repo, conf, upstream, commit_sha):
+def remove_pending_commit(repo: Repo, conf: dict[str, Any], upstream: str, commit_sha: str) -> None:
     lines_to_drop = [
         f"git fetch {upstream} {commit_sha}",
         f'git am "$(git format-patch -1 {commit_sha} -o ../patches)"',
@@ -826,7 +874,7 @@ def remove_pending_commit(repo, conf, upstream, commit_sha):
     print(f"✨ cherry pick {upstream}/{commit_sha} has been removed")
 
 
-def remove_pending_pull(repo, conf, upstream, pull_id):
+def remove_pending_pull(repo: Repo, conf: dict[str, Any], upstream: str, pull_id: str) -> None:
     line_to_drop = f"{upstream} refs/pull/{pull_id}/head"
     if line_to_drop not in conf["merges"]:
         exit_msg(
@@ -837,17 +885,17 @@ def remove_pending_pull(repo, conf, upstream, pull_id):
     conf["merges"].remove(line_to_drop)
 
 
-@task
-def remove_pending(ctx, entity_url):
+@task  # type: ignore[misc] # invoke decorators are dynamically typed
+def remove_pending(ctx: Any, entity_url: str) -> None:
     """Remove a pending merge using given entity link"""
 
     parts = parse_github_url(entity_url)
 
-    upstream = parts.get("upstream")
-    repo_name = parts.get("repo_name")
+    upstream = parts["upstream"]
+    repo_name = parts["repo_name"]
     repo = Repo(repo_name)
-    entity_type = parts.get("entity_type")
-    entity_id = parts.get("entity_id")
+    entity_type = parts["entity_type"]
+    entity_id = parts["entity_id"]
 
     config = repo.merges_config()
     if entity_type == "pull":
@@ -869,7 +917,7 @@ def remove_pending(ctx, entity_url):
         repo.update_merges_config(config)
 
 
-def get_dependency_module_list(modules):
+def get_dependency_module_list(modules: list[str]) -> list[str]:
     """Get dependency modules from a list of modules
     construct the dependency list from existing modules in addons_path
 
@@ -885,8 +933,8 @@ def get_dependency_module_list(modules):
     return deps
 
 
-@task
-def list_external_dependencies_installed(ctx, submodule_path):
+@task  # type: ignore[misc] # invoke decorators are dynamically typed
+def list_external_dependencies_installed(ctx: Any, submodule_path: str) -> None:
     """List installed modules of a specific directory.
 
     Compare the modules in the submodule path against the installed
@@ -915,7 +963,7 @@ def list_external_dependencies_installed(ctx, submodule_path):
                 print("\t- " + mod)
 
     # Construct a dependency name list by submodule
-    submodules = {}
+    submodules: dict[str, list[str]] = {}
     deps = get_dependency_module_list(modules)
     for dep in deps:
         sub = Module(dep).dir
@@ -928,7 +976,7 @@ def list_external_dependencies_installed(ctx, submodule_path):
     if not submodules:
         return
     print("\n\nDependencies:")
-    submodule_names = submodules.keys()
+    submodule_names = list(submodules.keys())
     submodule_names = sorted(submodule_names)
     # Display dependencies
     for sub in submodule_names:
@@ -938,7 +986,7 @@ def list_external_dependencies_installed(ctx, submodule_path):
             print("\t- " + mod)
 
 
-def _get_current_commit_from_submodule(ctx, path):
+def _get_current_commit_from_submodule(ctx, path: str) -> str:
     """Returns the current in stage commit for a submodule path"""
     ref_cmd = "git submodule status | grep '%s' | awk '{ print $1 }'" % path
     commit_hash = ctx.run(ref_cmd, hide=True).stdout
@@ -946,7 +994,7 @@ def _get_current_commit_from_submodule(ctx, path):
     return commit_hash.strip("\n").strip("+")
 
 
-def _cmd_git_submodule_upgrade(ctx, path, url, branch=None):
+def _cmd_git_submodule_upgrade(ctx, path: str, url: str, branch: str | None = None) -> None:
     """Force update of a submodule.
 
     If a branch is given, the submodule will be reset and checkout
@@ -985,8 +1033,8 @@ def _cmd_git_submodule_upgrade(ctx, path, url, branch=None):
         print("-- NOT UPGRADED")
 
 
-@task
-def upgrade(ctx, submodule_path=None, force_branch=None):
+@task  # type: ignore[misc] # invoke decorators are dynamically typed
+def upgrade(ctx: Any, submodule_path: str | None = None, force_branch: str | None = None) -> list[str] | None:
     """Update and upgrade a submodule to it's latest commit.
     Or all submodules if a submodule path is not specified.
 

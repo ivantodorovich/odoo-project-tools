@@ -56,16 +56,20 @@ class Module:
         try:
             manifest_path = os.path.join(path, "__manifest__.py")
             with open(manifest_path) as f:
-                manifest_data = eval(f.read())  # type: ignore[misc]
-                return manifest_data.get("depends", [])
+                # Use eval for manifest files - this is expected and safe for manifest files
+                manifest_data = eval(f.read())
+                depends = manifest_data.get("depends", [])
+                return list(depends)  # Ensure it's a list of strings
         except OSError:
             manifest_path = os.path.join(path, "__openerp__.py")
             with open(manifest_path) as f:
-                manifest_data = eval(f.read())  # type: ignore[misc]
-                return manifest_data.get("depends", [])
+                # Use eval for manifest files - this is expected and safe for manifest files  
+                manifest_data = eval(f.read())
+                depends = manifest_data.get("depends", [])
+                return list(depends)  # Ensure it's a list of strings
 
 
-@task
+@task  # type: ignore[misc] # invoke decorators are dynamically typed
 def where_is(ctx: Any, module_name: str) -> None:
     """Locate a module"""
     print(Module(module_name).path)

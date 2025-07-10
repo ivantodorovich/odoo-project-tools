@@ -27,15 +27,14 @@ def ask_or_abort(message: str) -> None:
 
 
 def echo(msg: str, *pa: Any, **kw: Any) -> None:
-    cmd = click.echo
-    if kw.get("fg"):
-        cmd = click.secho
-    cmd(msg, *pa, **kw)
+    # Use click.secho if we have color/style parameters, otherwise use click.echo
+    if kw.get("fg") or kw.get("bg") or kw.get("bold") or kw.get("dim") or kw.get("underline"):
+        click.secho(msg, *pa, **kw)
+    else:
+        click.echo(msg, *pa, **kw)
 
 
-def ask_question(message: str, **prompt_kwargs: Any) -> Any:
-    """Ask a question and return the answer
-
-    Wrapper around ``click.prompt()``
-    """
-    return click.prompt(message, **prompt_kwargs)
+def ask_question(message: str, **prompt_kwargs: Any) -> str:
+    """Ask a question to the user and return the answer."""
+    result = click.prompt(message, **prompt_kwargs)
+    return str(result)  # Ensure string return

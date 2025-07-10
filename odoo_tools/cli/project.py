@@ -1,8 +1,11 @@
 # Copyright 2023 Camptocamp SA
 # License AGPL-3.0 or later (http://www.gnu.org/licenses/agpl.html)
 
+from __future__ import annotations
+
 import os
 from pathlib import Path
+from typing import Any, Callable
 
 import click
 
@@ -24,14 +27,14 @@ from ..utils.proj import (
 )
 
 
-def get_proj_tmpl_ver():
+def get_proj_tmpl_ver() -> str | None:
     ver = os.getenv("PROJ_TMPL_VER")
     if ver:
         ui.echo(f"Proj version override: {ver}", fg="red")
     return ver
 
 
-def get_bumpversion_vars(opts):
+def get_bumpversion_vars(opts: SmartDict) -> dict[str, str]:
     version = opts.version or get_current_version()
     odoo_major, odoo_minor, __ = version.split(".", 2)
     config = load_config()
@@ -48,7 +51,7 @@ def get_bumpversion_vars(opts):
     return res
 
 
-def get_init_template_files():
+def get_init_template_files() -> tuple[dict[str, Any], ...]:
     return (
         {
             "source": f".proj.v{get_proj_tmpl_ver()}.cfg",
@@ -75,13 +78,13 @@ def get_init_template_files():
     )
 
 
-def _backup(dest):
+def _backup(dest: Path) -> None:
     backup_dest = dest.with_suffix(f"{dest.suffix}.bak")
     ui.echo(f"Backing up existing file {dest} to {backup_dest}")
     copy_file(dest, backup_dest)
 
 
-def bootstrap_files(opts):
+def bootstrap_files(opts: SmartDict) -> None:
     # Generate specific templated files
 
     for item in get_init_template_files():
@@ -116,7 +119,7 @@ def bootstrap_files(opts):
 
 
 @click.group()
-def cli():
+def cli() -> None:
     pass
 
 
@@ -135,7 +138,7 @@ def cli():
     is_flag=True,
     default=True,
 )
-def init(**kw):
+def init(**kw: Any) -> None:
     """Initialize a project"""
     click.echo("Preparing project...")
     bootstrap_files(SmartDict(kw))
@@ -165,8 +168,11 @@ def init(**kw):
     help="Directory to use for the virtualenv",
 )
 def checkout_local_odoo(
-    odoo_hash=None, enterprise_hash=None, venv=False, venv_path=".venv"
-):
+    odoo_hash: str | None = None, 
+    enterprise_hash: str | None = None, 
+    venv: bool = False, 
+    venv_path: str = ".venv"
+) -> None:
     """checkout odoo core and odoo enterprise in the working directory
 
     This can be used to test odoo core/enterprise patches inside docker (the tool will suggest how to change your

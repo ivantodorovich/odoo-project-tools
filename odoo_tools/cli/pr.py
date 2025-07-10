@@ -1,6 +1,8 @@
 # Copyright 2023 Camptocamp SA
 # License AGPL-3.0 or later (http://www.gnu.org/licenses/agpl.html)
 
+from __future__ import annotations
+
 from pathlib import PosixPath
 
 import click
@@ -11,7 +13,7 @@ from ..utils.path import cd, root_path
 
 
 @click.group()
-def cli():
+def cli() -> None:
     pass
 
 
@@ -54,14 +56,14 @@ def cli():
 )
 @click.argument("pr_number")
 def test(
-    pr_number,
-    database_dump=None,
-    template_db=None,
-    create_template=None,
-    keep_db=False,
-    port=8069,
-    base_branch="master",
-):
+    pr_number: str,
+    database_dump: str | None = None,
+    template_db: str | None = None,
+    create_template: bool = False,
+    keep_db: bool = False,
+    port: int = 8069,
+    base_branch: str = "master",
+) -> None:
     """Test a pull request
 
     :param str pr_number: pull request number
@@ -112,13 +114,13 @@ def test(
     default="master",
     help="the base branch on which the PR is based",
 )
-def checkout(pr_number, base_branch):
+def checkout(pr_number: str, base_branch: str = "master") -> None:
     handle_git_repository(pr_number, base_branch)
 
 
 @cli.command()
 @click.argument("pr_number")
-def clean(pr_number):
+def clean(pr_number: str) -> None:
     """clean the branch and database created by otools-pr test"""
     ui.echo("🛁 Removing branch")
     try:
@@ -133,7 +135,7 @@ def clean(pr_number):
     run(docker_compose.drop_db(dbname))
 
 
-def handle_git_repository(pr_number, branch):
+def handle_git_repository(pr_number: str, branch: str) -> None:
     gh.check_git_diff()
     master = f"remotes/origin/{branch}"
 
@@ -167,7 +169,7 @@ def handle_git_repository(pr_number, branch):
             run(docker_compose.build())
 
 
-def generate_docker_yml(dbname, port, file_name):
+def generate_docker_yml(dbname: str, port: int, file_name: str) -> None:
     # generate additional docker-compose file
     with open(file_name, "w+") as f:
         data = f"""
@@ -183,5 +185,5 @@ services:
         f.write(data)
 
 
-def _get_db_name(pr_number, is_template: bool = False) -> str:
+def _get_db_name(pr_number: str, is_template: bool = False) -> str:
     return f"odoodb-{pr_number}" + ("-template" if is_template else "")

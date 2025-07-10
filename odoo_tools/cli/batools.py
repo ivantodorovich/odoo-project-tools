@@ -1,9 +1,13 @@
 # Copyright 2023 Camptocamp SA
 # License AGPL-3.0 or later (http://www.gnu.org/licenses/agpl.html)
 
+from __future__ import annotations
+
 import re
 import subprocess
 from datetime import datetime, timedelta
+from pathlib import Path
+from typing import Any
 
 import click
 import jinja2
@@ -13,13 +17,13 @@ from ..utils.misc import get_cache_path
 from ..utils.path import cd
 
 
-def _check_docker_compose_file_is_old(dcfile) -> bool:
+def _check_docker_compose_file_is_old(dcfile: Path) -> bool:
     dcfile_ctime = datetime.fromtimestamp(dcfile.lstat().st_ctime)
     return datetime.now() - dcfile_ctime > timedelta(weeks=1)
 
 
 @click.group()
-def cli():
+def cli() -> None:
     pass
 
 
@@ -50,7 +54,7 @@ def cli():
     help="Force pulling updated image",
     type=click.Choice(["yes", "no", "ask"]),
 )
-def run(empty_db, port, force_image_pull, version):
+def run(empty_db: bool, port: int, force_image_pull: str, version: str) -> None:
     # we are storing the data and the logs in ~/.cache/otools/batools/localrun-<version>
     # this enables keeping a cache of the databases through the docker composition name,
     # for instance, and having the execution logs available for examination if something crashes.
@@ -87,12 +91,9 @@ def run(empty_db, port, force_image_pull, version):
                 f"Pulling docker image (this can be long). Logs are in {run_dir/'docker_logs.txt'}"
             )
             subprocess.run(
-                docker_compose.pull(
-                    "odoo", pull_policy=policy, quiet=True, include_deps=True
-                ),
+                docker_compose.pull("odoo"),
                 stdout=logfile,
             )
-        run_environment = {"MIGRATE": "false"}
         with open("odoo_logs.txt", "w", buffering=1) as logfile:
             ui.echo("Initializing the database")
             subprocess.run(
@@ -103,8 +104,7 @@ def run(empty_db, port, force_image_pull, version):
                 subprocess.run(
                     docker_compose.run(
                         "odoo",
-                        ["sh", "-c", "dropdb", "odoodb"],
-                        environment=run_environment,
+                        "sh -c 'dropdb odoodb'",
                     ),
                     stdout=logfile,
                     stderr=logfile,
@@ -112,7 +112,8 @@ def run(empty_db, port, force_image_pull, version):
                 )
             subprocess.run(
                 docker_compose.run(
-                    "odoo", ["odoo", "--stop-after-init"], environment=run_environment
+                    "odoo", 
+                    "odoo --stop-after-init",
                 ),
                 stdout=logfile,
                 stderr=logfile,
@@ -122,11 +123,7 @@ def run(empty_db, port, force_image_pull, version):
             pipe = subprocess.Popen(
                 docker_compose.run(
                     "odoo",
-                    ["odoo"],
-                    quiet=True,
-                    environment=run_environment,
-                    interactive=False,
-                    port_mapping=[(port, 8069)],
+                    "odoo",
                 ),
                 stderr=subprocess.PIPE,
                 stdout=logfile,
@@ -134,14 +131,15 @@ def run(empty_db, port, force_image_pull, version):
                 text=True,
             )
             try:
-                for line in pipe.stderr:
-                    logfile.write(line)
-                    if "Registry loaded" in line or "Modules loaded" in line:
-                        ui.echo(f"You can connect to http://localhost:{port}")
-                        subprocess.Popen(["xdg-open", f"http://localhost:{port}"])
-                        break
-                for line in pipe.stderr:
-                    logfile.write(line)
+                if pipe.stderr:
+                    for line in pipe.stderr:
+                        logfile.write(line)
+                        if "Registry loaded" in line or "Modules loaded" in line:
+                            ui.echo(f"You can connect to http://localhost:{port}")
+                            subprocess.Popen(["xdg-open", f"http://localhost:{port}"])
+                            break
+                    for line in pipe.stderr:
+                        logfile.write(line)
             except KeyboardInterrupt:
                 ui.echo("Exiting...")
             finally:

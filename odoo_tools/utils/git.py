@@ -1,12 +1,14 @@
 # Copyright 2023 Camptocamp SA
 # License AGPL-3.0 or later (http://www.gnu.org/licenses/agpl.html)
 
+from __future__ import annotations
+
 import os
 import subprocess
 from collections.abc import Iterator
 from os import PathLike
 from pathlib import Path
-from typing import NamedTuple, Optional, Union
+from typing import NamedTuple, Union
 
 from git.config import GitConfigParser
 from git_autoshare.core import find_autoshare_repository
@@ -19,26 +21,26 @@ from .path import build_path, cd, root_path
 class SubmoduleInfo(NamedTuple):
     path: str
     url: str
-    branch: Optional[str]
+    branch: str | None
     exists: bool
     cloned: bool
 
 
-def get_odoo_core(hash, dest="src/odoo", org="odoo", branch=None):
+def get_odoo_core(hash: str, dest: str = "src/odoo", org: str = "odoo", branch: str | None = None) -> None:
     dest = str(build_path(dest))
     _clone_or_fetch_repo(org, "odoo", branch, dest)
     ui.echo(f"Checking out {hash}")
     subprocess.run(["git", "-C", dest, "checkout", hash], check=True)
 
 
-def get_odoo_enterprise(hash, dest="src/enterprise", org="odoo", branch=None):
+def get_odoo_enterprise(hash: str, dest: str = "src/enterprise", org: str = "odoo", branch: str | None = None) -> None:
     dest = str(build_path(dest))
     _clone_or_fetch_repo(org, "enterprise", branch, dest)
     ui.echo(f"Checking out {hash}")
     subprocess.run(["git", "-C", dest, "checkout", hash], check=False)
 
 
-def _clone_or_fetch_repo(org, repo, branch, dest):
+def _clone_or_fetch_repo(org: str, repo: str, branch: str | None, dest: str) -> None:
     repo_url = f"git@github.com:{org}/{repo}"
     __, autoshare_repo = find_autoshare_repository([repo_url])
     if os.path.isdir(os.path.join(dest, ".git")):
@@ -50,26 +52,19 @@ def _clone_or_fetch_repo(org, repo, branch, dest):
         else:
             command = "clone"
         ui.echo(f"Cloning {org}/{repo} on branch {branch}, be patient")
-        subprocess.run(
-            [
-                "git",
-                command,
-                "--quiet",
-                "--branch",
-                branch,
-                repo_url,
-                dest,
-            ],
-            check=True,
-        )
+        cmd = ["git", command, "--quiet"]
+        if branch:
+            cmd.extend(["--branch", branch])
+        cmd.extend([repo_url, dest])
+        subprocess.run(cmd, check=True)
 
 
-def _get_gitmodules():
+def _get_gitmodules() -> str:
     return str(build_path(".gitmodules"))
 
 
 def iter_gitmodules(
-    filter_path: Optional[Union[str, PathLike]] = None,
+    filter_path: str | PathLike[str] | None = None,
 ) -> Iterator[SubmoduleInfo]:
     """Yields the submodules from `.gitmodules`
 
@@ -109,7 +104,7 @@ def submodule_add(submodule: SubmoduleInfo) -> None:
     subprocess.run(cmd + args, check=True)
 
 
-def submodule_sync(path: Union[str, PathLike]):
+def submodule_sync(path: str | PathLike[str]) -> None:
     """Submodule sync"""
     sync_cmd = ["git", "submodule", "sync"]
     if path:
@@ -117,7 +112,7 @@ def submodule_sync(path: Union[str, PathLike]):
     run(sync_cmd, check=True)
 
 
-def submodule_update(path: Union[str, PathLike]):
+def submodule_update(path: str | PathLike[str]) -> None:
     """Submodule update"""
     cmd = ["git", "submodule", "update", "--init"]
     args = []
@@ -134,7 +129,7 @@ def submodule_update(path: Union[str, PathLike]):
     run(cmd + args, check=True)
 
 
-def submodule_set_url(repo_path, url, remote="origin"):
+def submodule_set_url(repo_path: str, url: str, remote: str = "origin") -> None:
     with cd(root_path()):
         run(
             ["git", "config", "--file=.gitmodules", f"submodule.{repo_path}.url", url],
@@ -142,7 +137,7 @@ def submodule_set_url(repo_path, url, remote="origin"):
         )
 
 
-def set_remote_url(repo_path, url, remote="origin", add=False):
+def set_remote_url(repo_path: str, url: str, remote: str = "origin", add: bool = False) -> None:
     submodule_set_url(repo_path, url, remote=remote)
     cmd = ["git", "remote", "set-url", remote, url]
     if add:
@@ -151,12 +146,12 @@ def set_remote_url(repo_path, url, remote="origin", add=False):
         run(cmd, check=True)
 
 
-def checkout(branch_name, remote="origin"):
+def checkout(branch_name: str, remote: str = "origin") -> None:
     run(["git", "fetch", remote, branch_name])
     run(["git", "checkout", f"{remote}/{branch_name}"])
 
 
-def get_current_branch():
+def get_current_branch() -> str | None:
     try:
         branch = subprocess.check_output(
             ["git", "branch", "--show-current"], text=True
@@ -166,5 +161,5 @@ def get_current_branch():
     return branch
 
 
-def delete_branch(branch_name):
+def delete_branch(branch_name: str) -> None:
     run(["git", "branch", "-D", branch_name])

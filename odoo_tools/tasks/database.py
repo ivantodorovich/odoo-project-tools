@@ -1,11 +1,14 @@
 # Copyright 2018 Camptocamp SA
 # License AGPL-3.0 or later (http://www.gnu.org/licenses/agpl).
 
+from __future__ import annotations
+
 import getpass
 import os
 import time
 from contextlib import contextmanager
 from datetime import datetime
+from typing import Any, Generator
 
 import psycopg2
 from invoke import task
@@ -15,7 +18,7 @@ from ..utils.path import cd, make_dir
 from ..utils.proj import get_project_manifest_key
 
 
-def get_default_parameters():
+def get_default_parameters() -> tuple[str, str]:
     # we assume that country -> fr|ch can be used as a platform
     # some projects doesn't have country in manifest
     # to get country you can update project from odoo-template
@@ -37,7 +40,7 @@ def get_default_parameters():
 
 
 @contextmanager
-def ensure_db_container_up(ctx):
+def ensure_db_container_up(ctx: Any) -> Generator[None, None, None]:
     """Ensure the DB container is up and running.
 
     :param ctx:
@@ -69,13 +72,13 @@ def ensure_db_container_up(ctx):
         ctx.run("docker compose stop db", hide=True)
 
 
-def get_db_container_port(ctx):
+def get_db_container_port(ctx: Any) -> str:
     """Get and return DB container port"""
     run_res = ctx.run("docker compose port db 5432", hide=True)
     return str(int(run_res.stdout.split(":")[-1]))
 
 
-def execute_db_request(ctx, dbname, sql):
+def execute_db_request(ctx: Any, dbname: str, sql: str) -> Any:
     """Return the execution of given SQL request on given db"""
     result = False
     with ensure_db_container_up(ctx):
@@ -88,9 +91,9 @@ def execute_db_request(ctx, dbname, sql):
     return result
 
 
-def get_db_request_result(ctx, dbname, sql):
+def get_db_request_result(ctx: Any, dbname: str, sql: str) -> list[tuple[Any, ...]] | None:
     """Return the execution of given SQL request on given db"""
-    result = False
+    result = None
     with ensure_db_container_up(ctx):
         db_port = get_db_container_port(ctx)
         dsn = f"host=localhost dbname={dbname} user=odoo password=odoo port={db_port}"
@@ -102,7 +105,7 @@ def get_db_request_result(ctx, dbname, sql):
     return result
 
 
-def get_db_list(ctx):
+def get_db_list(ctx: Any) -> list[str]:
     """Return the list of db on container"""
     sql = """
         SELECT datname
@@ -114,16 +117,16 @@ def get_db_list(ctx):
     return [db_name_tuple[0] for db_name_tuple in databases_fetch]
 
 
-def expand_path(path):
+def expand_path(path: str) -> str:
     if path.startswith("~"):
         path = os.path.expanduser(path)
     return path
 
 
-@task(name="list-versions")
-def list_versions(ctx):
+@task(name="list-versions")  # type: ignore[misc] # invoke decorators are dynamically typed
+def list_versions(ctx: Any) -> None:
     """Print a table of DBs with Marabunta version and install date."""
-    res = {}
+    res: dict[str, tuple[datetime | None, str]] = {}
     sql = """
         SELECT date_done, number
         FROM marabunta_version
@@ -135,7 +138,10 @@ def list_versions(ctx):
     for db_name in db_list:
         try:
             version_fetch = get_db_request_result(ctx, db_name, sql)
-            version_tuple = version_fetch[0]
+            if version_fetch:
+                version_tuple = version_fetch[0]
+            else:
+                version_tuple = (None, "unknown")
         except psycopg2.ProgrammingError:
             # Error expected when marabunta_version table does not exist
             version_tuple = (None, "unknown")
@@ -156,18 +162,18 @@ def list_versions(ctx):
         res.items(), key=lambda x: x[1][0] or datetime.min, reverse=True
     ):
         if version[0]:
-            time = version[0].strftime("%Y-%m-%d")
+            time_str = version[0].strftime("%Y-%m-%d")
         else:
-            time = "unknown"
+            time_str = "unknown"
         print(
             "{:<{size1}} {:<{size2}} {:<12}".format(
-                db_name, version[1], time, size1=size1, size2=size2
+                db_name, version[1], time_str, size1=size1, size2=size2
             )
         )
 
 
-@task(name="download-dump")
-def download_dump(ctx, platform="", customer="", env="int", dump_name="", dumpdir="."):
+@task(name="download-dump")  # type: ignore[misc] # invoke decorators are dynamically typed
+def download_dump(ctx: Any, platform: str = "", customer: str = "", env: str = "int", dump_name: str = "", dumpdir: str = ".") -> str:
     """Download Dump
 
     Works only with Azure and celebrimbor_cli
@@ -206,8 +212,8 @@ def download_dump(ctx, platform="", customer="", env="int", dump_name="", dumpdi
     return fname
 
 
-@task(name="generate-dump")
-def generate_dump(ctx, platform="", customer="", env="int"):
+@task(name="generate-dump")  # type: ignore[misc] # invoke decorators are dynamically typed
+def generate_dump(ctx: Any, platform: str = "", customer: str = "", env: str = "int") -> str:
     """Generate Dump
 
     Works only with Azure and celebrimbor_cli
@@ -229,8 +235,8 @@ def generate_dump(ctx, platform="", customer="", env="int"):
     return dump_name
 
 
-@task(name="upload-dump")
-def upload_dump(ctx, db_path, platform="", customer="", env="int"):
+@task(name="upload-dump")  # type: ignore[misc] # invoke decorators are dynamically typed
+def upload_dump(ctx: Any, db_path: str, platform: str = "", customer: str = "", env: str = "int") -> None:
     """Upload dump
 
     Works only with Azure and celebrimbor_cli
@@ -251,8 +257,8 @@ def upload_dump(ctx, db_path, platform="", customer="", env="int"):
     print(f"{dump_file_path} is uploaded for {p_customer} on {p_platform} {env}")
 
 
-@task(name="restore-from-prod")
-def restore_from_prod(ctx, platform="", customer="", env="int"):
+@task(name="restore-from-prod")  # type: ignore[misc] # invoke decorators are dynamically typed
+def restore_from_prod(ctx: Any, platform: str = "", customer: str = "", env: str = "int") -> None:
     """Initiate a replication from the prod environment
 
     Works only with Azure and celebrimbor_cli
@@ -270,8 +276,8 @@ def restore_from_prod(ctx, platform="", customer="", env="int"):
     print(f"Replica from prod is restored for {p_customer} on {p_platform} {env}")
 
 
-@task(name="azure-restore-dump")
-def azure_restore_dump(ctx, dump_name, platform="", customer="", env="int"):
+@task(name="azure-restore-dump")  # type: ignore[misc] # invoke decorators are dynamically typed
+def azure_restore_dump(ctx: Any, dump_name: str, platform: str = "", customer: str = "", env: str = "int") -> None:
     """Restore uploaded dump
 
     Works only with Azure and celebrimbor_cli
@@ -290,8 +296,8 @@ def azure_restore_dump(ctx, dump_name, platform="", customer="", env="int"):
     print(f"{dump_name} is restored for {p_customer} on {p_platform} {env}")
 
 
-@task(name="restore-dump")
-def restore_dump(ctx, dump_path, db_name="", hide_traceback=True):
+@task(name="restore-dump")  # type: ignore[misc] # invoke decorators are dynamically typed
+def restore_dump(ctx: Any, dump_path: str, db_name: str = "", hide_traceback: bool = True) -> None:
     """Restore a PG Dump for given database name.
 
     :param dump_path: Local path to the dump
@@ -320,16 +326,16 @@ def restore_dump(ctx, dump_path, db_name="", hide_traceback=True):
         )
 
 
-@task(name="download-restore-dump")
+@task(name="download-restore-dump")  # type: ignore[misc] # invoke decorators are dynamically typed
 def download_restore_dump(
-    ctx,
-    platform="",
-    customer="",
-    env="int",
-    dump_name="",
-    dumpdir=".",
-    restore_db="",
-):
+    ctx: Any,
+    platform: str = "",
+    customer: str = "",
+    env: str = "int",
+    dump_name: str = "",
+    dumpdir: str = ".",
+    restore_db: str = "",
+) -> None:
     """A combo of the above tasks.
 
     :param platform: platform you want to run the command on
@@ -349,8 +355,8 @@ def download_restore_dump(
     restore_dump(ctx, dump_path, db_name=restore_db)
 
 
-@task(name="local-dump")
-def local_dump(ctx, db_name="odoodb", path="."):
+@task(name="local-dump")  # type: ignore[misc] # invoke decorators are dynamically typed
+def local_dump(ctx: Any, db_name: str = "odoodb", path: str = ".") -> str:
     """Create a PG Dump for given database name.
 
     :param db_name: Name of the Database to dump
@@ -374,16 +380,16 @@ def local_dump(ctx, db_name="odoodb", path="."):
     return dump_file_path
 
 
-@task(name="dump-and-share")
+@task(name="dump-and-share")  # type: ignore[misc] # invoke decorators are dynamically typed
 def dump_and_share(
-    ctx,
-    platform="",
-    customer="",
-    env="int",
-    db_name="odoodb",
-    tmp_path="/tmp",
-    keep_local_dump=False,
-):
+    ctx: Any,
+    platform: str = "",
+    customer: str = "",
+    env: str = "int",
+    db_name: str = "odoodb",
+    tmp_path: str = "/tmp",
+    keep_local_dump: bool = False,
+) -> None:
     """Create a dump and share it on Azure.
 
     Usage : invoke database.dump-and-share --db-name=mydb
@@ -406,7 +412,7 @@ def dump_and_share(
         ctx.run("rm %s" % dump_file_path)
 
 
-def _download_from_azure(ctx, platform, customer, env, dump_name):
+def _download_from_azure(ctx: Any, platform: str, customer: str, env: str, dump_name: str) -> None:
     """Download one dump from Azure with celebrimbor_cli.
 
     :param platform: platform you want to run the command on
@@ -419,7 +425,7 @@ def _download_from_azure(ctx, platform, customer, env, dump_name):
     )
 
 
-def _get_list_of_dumps(ctx, platform, customer, env):
+def _get_list_of_dumps(ctx: Any, platform: str, customer: str, env: str) -> list[str]:
     """Retrieve list of dumps from Azure with celebrimbor_cli.
 
     :param platform: platform you want to run the command on
@@ -438,8 +444,8 @@ def _get_list_of_dumps(ctx, platform, customer, env):
     return res
 
 
-@task(name="list-of-dumps")
-def list_of_dumps(ctx, platform="", customer="", env="int"):
+@task(name="list-of-dumps")  # type: ignore[misc] # invoke decorators are dynamically typed
+def list_of_dumps(ctx: Any, platform: str = "", customer: str = "", env: str = "int") -> None:
     ctx_platform, ctx_customer = get_default_parameters()
     p_platform = platform if platform else ctx_platform
     p_customer = customer if customer else ctx_customer

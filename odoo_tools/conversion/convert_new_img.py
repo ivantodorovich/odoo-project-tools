@@ -5,6 +5,8 @@ Helper to migrate "old" format project to the new image format.
 Please delete this when our last project has been converted.
 """
 
+from __future__ import annotations
+
 import argparse
 import ast
 import configparser
@@ -16,6 +18,7 @@ import shutil
 import subprocess
 import sys
 from dataclasses import dataclass
+from typing import Any
 
 try:
     import odoorpc
@@ -34,15 +37,15 @@ from ..utils.proj import get_current_version
 from ..utils.pypi import odoo_name_to_pkg_name
 from ..utils.req import make_requirement_line_for_proj_fork
 
-REPORT = []
+REPORT: list[str] = []
 
 
-def report(msg):
+def report(msg: str) -> None:
     global REPORT
     REPORT.append(msg)
 
 
-def generate_report():
+def generate_report() -> None:
     global REPORT
     content = "\n".join(REPORT)
     print("++++++++++++++++++++++++++++++++++++++++++++++++++++++")
@@ -96,7 +99,7 @@ docker build .
 """
 
 
-def main(args=None):
+def main(args: argparse.Namespace | None = None) -> None:
     if get_conf_key("template_version") == 2:
         print("Project already migrated")
         return sys.exit(0)
@@ -122,7 +125,7 @@ class Submodule:
     url: str = ""
     branch: str = ""
 
-    def generate_requirements(self, installed_modules):
+    def generate_requirements(self, installed_modules: set[str] | None) -> str:
         """return a block concerning the submodule that can be inserted in a requirements.txt file.
 
         The block has 1 line per module which is in the repository
@@ -163,24 +166,26 @@ class Submodule:
         return "\n".join(require)
 
 
-def collect_submodules():
+def collect_submodules() -> dict[str, Submodule]:
     """remove the submodules from the project"""
-    submodules = {}
+    submodules: dict[str, Submodule] = {}
     parser = configparser.ConfigParser()
     parser.read(".gitmodules")
     for section in parser:
         if section.startswith("submodule"):
             print(section)
-            name = re.match(r"""submodule ['"]([\w/_-]+)['"]""", section).groups(1)[0]
-            submodule = Submodule(name=name)
-            submodules[section] = submodule
-            for fieldname, value in parser[section].items():
-                print(fieldname, value)
-                submodule.__setattr__(fieldname, value)
+            match = re.match(r"""submodule ['"]([\w/_-]+)['"]""", section)
+            if match:
+                name = match.groups()[0]
+                submodule = Submodule(name=name)
+                submodules[section] = submodule
+                for fieldname, value in parser[section].items():
+                    print(fieldname, value)
+                    setattr(submodule, fieldname, value)
     return submodules
 
 
-def remove_submodules(submodules):
+def remove_submodules(submodules: dict[str, Submodule]) -> None:
     parser = configparser.ConfigParser(strict=False)
     parser.read(".git/config")
 
@@ -197,7 +202,7 @@ def remove_submodules(submodules):
         subprocess.run(["git", "rm", "-f", submodules[section].path], check=False)
 
 
-def init_proj_v2():
+def init_proj_v2() -> None:
     subprocess.run(["rm", ".proj.cfg"], check=False)
     env = dict(os.environ, PROJ_TMPL_VER="2")
     subprocess.run(["otools-project", "init"], env=env, check=False)
@@ -212,7 +217,7 @@ def init_proj_v2():
     )
 
 
-def move_files():
+def move_files() -> None:
     if os.path.isdir("odoo/local-src/server_environment_files"):
         # the project has a server_environment_files module -> use this one
         subprocess.run(
@@ -257,7 +262,7 @@ def move_files():
         subprocess.run(["git", "add", "patches/.gitkeep"], check=False)
 
 
-def remove_files():
+def remove_files() -> None:
     """cleanup no longer needed files"""
     to_remove = [
         "tasks",
@@ -281,12 +286,12 @@ def remove_files():
             raise ValueError(f"unexpected file {name}. Is it a symlink?")
 
 
-def copy_dockerfile():
+def copy_dockerfile() -> None:
     shutil.move("odoo/Dockerfile", "Dockerfile.bak")
     subprocess.run(["git", "rm", "-f", "odoo/Dockerfile"], check=False)
 
 
-def parse_args():
+def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         "Project Converter",
         "Tool to convert projects to the new docker image format",

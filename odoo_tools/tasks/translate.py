@@ -12,7 +12,7 @@ from invoke import task
 from ..utils.path import build_path
 
 
-@task(default=True)
+@task(default=True)  # type: ignore[misc] # invoke decorators are dynamically typed
 def generate(ctx: Any, addon_path: str, update_po: bool = True) -> None:
     """Generate pot template and merge it in language files
 

@@ -1,6 +1,9 @@
 # Copyright 2023 Camptocamp SA
 # License AGPL-3.0 or later (http://www.gnu.org/licenses/agpl.html)
 
+from __future__ import annotations
+
+from typing import Any
 
 import click
 
@@ -15,7 +18,7 @@ from ..utils.pypi import odoo_name_to_pkg_name
 
 
 # TODO: centralize ask/confirm/abort in `ui` utils
-def ask_confirm_replace(pkg, msg, version=None):
+def ask_confirm_replace(pkg: Package, msg: str, version: str | None = None) -> None:
     if click.confirm(msg, abort=True):
         pkg.replace_requirement(version=version)
         click.echo("Requirement replaced")
@@ -23,7 +26,7 @@ def ask_confirm_replace(pkg, msg, version=None):
 
 
 @click.group()
-def cli():
+def cli() -> None:
     pass
 
 
@@ -57,7 +60,7 @@ def cli():
     is_flag=True,
     default=None,
 )
-def add(name, version=None, pr=None, odoo=True, upgrade=False, use_wool=None):
+def add(name: str, version: str | None = None, pr: str | None = None, odoo: bool = True, upgrade: bool = False, use_wool: bool | None = None) -> None:
     """Update the project's requirements for a given package (odoo or not).
 
     * If the module is not already listed in the requirements.txt, check the
@@ -133,7 +136,7 @@ def add(name, version=None, pr=None, odoo=True, upgrade=False, use_wool=None):
     is_flag=True,
     default=None,
 )
-def add_pending(pr_url, addons=None, editable=True, aggregate=True, use_wool=None):
+def add_pending(pr_url: str, addons: str | None = None, editable: bool = True, aggregate: bool = True, use_wool: bool | None = None) -> None:
     """Add a pending PR or commit.
 
     This command will create or update an aggregation file corresponding to the
@@ -146,18 +149,18 @@ def add_pending(pr_url, addons=None, editable=True, aggregate=True, use_wool=Non
 
     pm_utils.add_pending(pr_url, aggregate=aggregate)
 
-    addons = [x.strip() for x in addons.split(",") if x.strip()] if addons else []
-    if not addons:
+    addon_list = [x.strip() for x in addons.split(",") if x.strip()] if addons else []
+    if not addon_list:
         ui.exit_msg("No addon specifified. Please update dev requirements manually.")
 
-    ui.echo(f"Adding: {', '.join(addons)} from {pr_url}")
+    ui.echo(f"Adding: {', '.join(addon_list)} from {pr_url}")
 
     # Create req file if missing
     dev_req_file_path = req_utils.get_project_dev_req()
     if not dev_req_file_path.exists():
         run(f"touch {dev_req_file_path.as_posix()}")
 
-    for name in addons:
+    for name in addon_list:
         pkg = Package(
             name,
             odoo=True,
@@ -166,7 +169,7 @@ def add_pending(pr_url, addons=None, editable=True, aggregate=True, use_wool=Non
         # TODO: does it work w/ commits?
         pkg.add_or_replace_requirement(pr=pr_url, editable=editable, use_wool=use_wool)
 
-    ui.echo(f"Updated dev requirements for: {', '.join(addons)}", fg="green")
+    ui.echo(f"Updated dev requirements for: {', '.join(addon_list)}", fg="green")
 
     # TODO: stage changes for commit
 
@@ -185,7 +188,7 @@ def add_pending(pr_url, addons=None, editable=True, aggregate=True, use_wool=Non
     default=True,
     help="use --no-odoo to install a python module which is not an Odoo addon",
 )
-def add_requirement(name, **kw):
+def add_requirement(name: str, **kw: Any) -> None:
     """Generate a python requirement line.
 
     You can simply copy the output and paste it in a requirements.txt file

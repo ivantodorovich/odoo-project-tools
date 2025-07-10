@@ -7,18 +7,32 @@ import configparser
 import pathlib
 import shutil
 import subprocess
-from importlib.resources import files, abc
 from os import PathLike
-from typing import Any, Union
+from typing import Any, Callable, Union
+
+# Import the files function with proper handling
+ImportLibFiles = None
+
+try:
+    from importlib.resources import files
+    ImportLibFiles = files
+except ImportError:
+    try:
+        from importlib_resources import files  # type: ignore[import-not-found]
+        ImportLibFiles = files
+    except ImportError:
+        pass
 
 PKG_NAME = "odoo_tools"
 
 
-def get_file_path(filepath: str) -> abc.Traversable:
-    return files(PKG_NAME) / filepath
+def get_file_path(filepath: str) -> Any:  # Simplified return type
+    if ImportLibFiles is None:
+        raise ImportError("importlib.resources not available")
+    return ImportLibFiles(PKG_NAME) / filepath
 
 
-def get_template_path(filepath: str) -> abc.Traversable:
+def get_template_path(filepath: str) -> Any:  # Simplified return type
     return get_file_path("templates/" + filepath)
 
 

@@ -46,18 +46,23 @@ def create_db_from_local_files(
     """
     if dumps := [d.name for d in Path(".").absolute().glob("*.pg") if d.is_file()]:
         dumps.sort()  # Sort alphabetically to make it easier to read for users
-        choices = dict(enumerate(dumps, start=1))
+        choices: dict[int, str] = dict(enumerate(dumps, start=1))
         ui.echo(
             "Found the following DB dumps:\n"
             + "\n".join(f"{i} - {n}" for i, n in choices.items())
         )
         key = ui.ask_question("Enter the number of the DB dump to restore", type=int)
-        if db_dump := choices.get(key):
-            create_db_from_db_dump(db_name, db_dump, template_db_name)
-        else:
-            ui.exit_msg(
-                f"Invalid selection: {key} not found in {', '.join(map(str, choices))}"
-            )
+        # Ensure key is an integer for dict lookup
+        try:
+            key_int = int(key) if isinstance(key, str) else key
+            if db_dump := choices.get(key_int):
+                create_db_from_db_dump(db_name, db_dump, template_db_name)
+            else:
+                ui.exit_msg(
+                    f"Invalid selection: {key} not found in {', '.join(map(str, choices))}"
+                )
+        except (ValueError, TypeError):
+            ui.exit_msg(f"Invalid selection: {key} is not a valid number")
     else:
         ui.exit_msg("No database dump found")
 

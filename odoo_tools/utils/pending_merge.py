@@ -1,9 +1,12 @@
 # Copyright 2017 Camptocamp SA
 # License AGPL-3.0 or later (http://www.gnu.org/licenses/agpl.html)
 
+from __future__ import annotations
+
 import logging
 import os
-from pathlib import PosixPath
+from pathlib import Path, PosixPath
+from typing import Any
 
 import click
 import git_aggregator.config
@@ -24,8 +27,9 @@ from .yaml import yaml_dump, yaml_load
 git_aggregator.main.setup_logger()
 
 
+# Python 2/3 compatibility - input function
 try:
-    input = raw_input
+    input = raw_input  # type: ignore[name-defined]
 except NameError:
     pass
 
@@ -35,7 +39,7 @@ git_aggregator.main.setup_logger()
 class Repo:
     """Handle checked out repositories and their pending merges."""
 
-    def __init__(self, name_or_path, path_check=True):
+    def __init__(self, name_or_path: str | Path, path_check: bool = True) -> None:
         self.template_version = get_conf_key("template_version") or 1
         self.company_git_remote = get_conf_key("company_git_remote")
         self.odoo_src_rel_path = get_conf_key("odoo_src_rel_path")
@@ -51,7 +55,7 @@ class Repo:
             self._check_paths()
         self.name = self._safe_repo_name(name_or_path)
 
-    def _check_paths(self):
+    def _check_paths(self) -> None:
         if not (self.abs_path / ".git").exists():
             raise PathNotFound(
                 "GIT CONFIG NOT FOUND. "
@@ -62,13 +66,13 @@ class Repo:
             raise PathNotFound(f"MERGES PATH NOT FOUND `{self.abs_merges_path}'.")
 
     @staticmethod
-    def _safe_repo_name(name_or_path):
+    def _safe_repo_name(name_or_path: str | Path) -> str:
         # TODO: try to avoid this not homogeneous handling
         if isinstance(name_or_path, PosixPath):
             name_or_path = name_or_path.as_posix()
-        return name_or_path.rstrip("/").rsplit("/", 1)[-1]
+        return str(name_or_path).rstrip("/").rsplit("/", 1)[-1]
 
-    def make_repo_path(self, name_or_path):
+    def make_repo_path(self, name_or_path: str | Path) -> Path:
         """Return a submodule path by a submodule name."""
         submodule_name = self._safe_repo_name(name_or_path)
         if self.template_version == 1 and submodule_name in ("odoo", "ocb", "src"):
@@ -77,7 +81,7 @@ class Repo:
             return self.odoo_src_rel_path / submodule_name
         return self.ext_src_rel_path / submodule_name
 
-    def make_repo_merges_path(self, name_or_path, relative=False):
+    def make_repo_merges_path(self, name_or_path: str | Path, relative: bool = False) -> Path:
         """Return a pending-merges file for a given repo.
 
         :param name_or_path: either a full path or a bare repo name,
@@ -92,7 +96,7 @@ class Repo:
         return (base_path / repo_name).with_suffix(".yml")
 
     @classmethod
-    def repositories_from_pending_folder(cls, path=None):
+    def repositories_from_pending_folder(cls, path: Path | None = None) -> list[Repo]:
         pending_merge_abs_path = build_path(get_conf_key("pending_merge_rel_path"))
         path = path or pending_merge_abs_path
         repo_names = []
@@ -102,14 +106,14 @@ class Repo:
             ]
         return [cls(name) for name in repo_names]
 
-    def has_pending_merges(self):
+    def has_pending_merges(self) -> bool:
         found = os.path.exists(self.abs_merges_path)
         if not found:
             return False
         # either empty or commented out
         return bool(self.merges_config())
 
-    def has_any_pr_left(self):
+    def has_any_pr_left(self) -> bool:
         if not self.has_pending_merges():
             return False
         config = self.merges_config()
@@ -118,15 +122,16 @@ class Repo:
         pr_patches = any("pull" in x for x in patches)
         return pr_refs or pr_patches
 
-    def merges_config(self):
+    def merges_config(self) -> dict[str, Any]:
         with open(self.abs_merges_path) as f:
             data = yaml_load(f.read()) or {}
             # FIXME: this should be relative
             # to the position of the pending merge folder
             repo_relpath = ".." / self.path
-            return data.get(repo_relpath.as_posix(), {})
+            result = data.get(repo_relpath.as_posix(), {})
+            return dict(result) if result else {}
 
-    def update_merges_config(self, config):
+    def update_merges_config(self, config: dict[str, Any]) -> None:
         # get former config if any
         if os.path.exists(self.abs_merges_path):
             with open(self.abs_merges_path) as f:
@@ -138,15 +143,15 @@ class Repo:
         with open(self.abs_merges_path, "w") as f:
             yaml_dump(data, f)
 
-    def api_url(self, upstream=None):
+    def api_url(self, upstream: str | None = None) -> str:
         return f"https://api.github.com/repos/{upstream or self.company_git_remote}/{self.name}"
 
-    def ssh_url(self, namespace=None):
-        namespace = namespace or self.company_git_remote
-        return self.build_ssh_url(namespace, self.name)
+    def ssh_url(self, namespace: str | None = None) -> str:
+        effective_namespace = namespace or self.company_git_remote
+        return self.build_ssh_url(effective_namespace, self.name)
 
     @classmethod
-    def build_ssh_url(cls, namespace, repo_name):
+    def build_ssh_url(cls, namespace: str, repo_name: str) -> str:
         return f"git@github.com:{namespace}/{repo_name}.git"
 
     def generate_pending_merges_file_template(self, upstream):
