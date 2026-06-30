@@ -50,24 +50,36 @@ def ls(dockerfile=False):
     """
     submodules = (submodule.path for submodule in git.iter_gitmodules())
     if dockerfile:
-        blacklist = {"odoo/src"}
-        lines = (f"odoo/{line}" for line in submodules if line not in blacklist)
+        odoo_src = config.odoo_src_rel_path
+        local_src = config.local_src_rel_path
+        external_src = config.ext_src_rel_path
+        blacklist = {str(odoo_src)}
+        # `.gitmodules` paths are already relative to the project root
+        lines = (line for line in submodules if line not in blacklist)
         if config.template_version == 1:
+            # odoo is checked out directly in `odoo_src_rel_path`
             base_addons_paths = [
-                "odoo/src/odoo/odoo/addons",
-                "odoo/src/odoo/addons",
-                "odoo/local-src",
+                odoo_src / "odoo/addons",
+                odoo_src / "addons",
             ]
         else:
+            # v2 projects (deprecated) hold odoo and enterprise side by side
             base_addons_paths = [
-                "odoo/src/odoo/odoo/addons",
-                "odoo/src/odoo/addons",
-                "odoo/src/enterprise",
-                "odoo/odoo/addons",
+                odoo_src / "odoo/odoo/addons",
+                odoo_src / "odoo/addons",
+                odoo_src / "enterprise",
             ]
-        trailing_addons_paths = []
-        if path.build_path("odoo/odoo/paid-modules").exists():
-            trailing_addons_paths.append("odoo/odoo/paid-modules")
+        base_addons_paths.append(local_src)
+        paid_modules_search = [
+            local_src.parent / "paid-modules",
+            external_src / "paid-modules",
+            external_src / "3rd-party",
+        ]
+        trailing_addons_paths = [
+            paid_modules
+            for paid_modules in paid_modules_search
+            if path.build_path(paid_modules).exists()
+        ]
         lines = chain(
             base_addons_paths,
             lines,
