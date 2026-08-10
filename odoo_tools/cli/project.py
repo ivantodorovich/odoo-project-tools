@@ -1,7 +1,6 @@
 # Copyright 2023 Camptocamp SA
 # License AGPL-3.0 or later (http://www.gnu.org/licenses/agpl.html)
 
-import os
 import re
 import uuid
 
@@ -9,6 +8,7 @@ import click
 import jinja2
 from git import Repo as GitRepo
 
+from ..exceptions import ProjectConfigException
 from ..utils import git, ui
 from ..utils.click import global_command_decorators
 from ..utils.config import PROJ_CFG_FILE, config
@@ -23,14 +23,6 @@ from ..utils.proj import (
     generate_odoo_config_file,
     setup_venv,
 )
-
-
-# TODO: proj_tmpl_ver=2 is deprecated
-def get_proj_tmpl_ver():
-    ver = os.getenv("PROJ_TMPL_VER")
-    if ver:
-        ui.echo(f"Proj version override: {ver}", fg="red")
-    return ver
 
 
 def convert_history_to_towncrier(history_path):
@@ -125,16 +117,12 @@ def convert_history_to_towncrier(history_path):
     history_path.write_text("\n".join(new_content) + "\n")
 
 
-def get_init_template_files():
-    return (
+def get_init_template_files(template_version):
+    template_files = [
         {
-            "source": f".proj.v{get_proj_tmpl_ver() or '1'}.cfg",
+            "source": f".proj.v{template_version}.cfg",
             "destination": build_path(f"./{PROJ_CFG_FILE}"),
             "check": lambda source_path, dest_path: not dest_path.exists(),
-        },
-        {
-            "source": "docker-compose.override.tmpl.yml",
-            "destination": build_path("./docker-compose.override.yml"),
         },
         {
             "source": "towncrier.tmpl.toml",
@@ -154,7 +142,15 @@ def get_init_template_files():
                 dest_path
             ),
         },
-    )
+    ]
+    if template_version == "2":
+        template_files.append(
+            {
+                "source": "docker-compose.override.tmpl.yml",
+                "destination": build_path("./docker-compose.override.yml"),
+            },
+        )
+    return template_files
 
 
 def _backup(dest):
@@ -163,10 +159,10 @@ def _backup(dest):
     copy_file(dest, backup_dest)
 
 
-def bootstrap_files(opts):
+def bootstrap_files(template_version, backup=True, **opts):
     # Generate specific templated files
 
-    for item in get_init_template_files():
+    for item in get_init_template_files(template_version):
         source = get_template_path(item["source"])
         dest = item["destination"]
         check = item.get("check", lambda *p: True)
@@ -175,14 +171,15 @@ def bootstrap_files(opts):
                 item["fallback"](source, dest)
             continue
         if var_getter := item.get("variables_getter"):
+            getter_opts = SmartDict(opts, version=template_version, backup=backup)
             jinja_template = jinja2.Template(source.read_text(), trim_blocks=True)
-            content = jinja_template.render(var_getter(opts))
+            content = jinja_template.render(var_getter(getter_opts))
         else:
             content = source.read_text()
         # Write the file, except if the target already matches the expected content
         if dest.exists() and dest.read_text() == content:
             continue
-        elif opts.backup and item.get("backup", True) and dest.exists():
+        elif backup and item.get("backup", True) and dest.exists():
             _backup(dest)
         dest.write_text(content)
 
@@ -200,10 +197,14 @@ def cli():
 
 
 @cli.command()
+# TODO: proj_tmpl_ver=2 is deprecated
 @click.option(
     "-v",
     "--version",
     "version",
+    type=click.Choice(["1", "2"]),
+    envvar="PROJ_TMPL_VER",
+    show_envvar=True,
     help="Use 1 for a project using the 'old image' format, and 2 for 'new image' (deprecated)",
 )
 @click.option(
@@ -214,10 +215,17 @@ def cli():
     is_flag=True,
     default=True,
 )
-def init(**kw):
+def init(version, backup, **kw):
     """Initialize a project"""
     click.echo("Preparing project...")
-    bootstrap_files(SmartDict(kw))
+    template_version = version
+    if not template_version:
+        try:
+            template_version = config.template_version
+        except ProjectConfigException:
+            # `init` also runs on projects that have no `.proj.cfg` yet
+            pass
+    bootstrap_files(str(template_version or "1"), backup=backup, **kw)
 
 
 @cli.command()

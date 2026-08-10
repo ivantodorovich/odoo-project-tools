@@ -35,7 +35,6 @@ def test_init(project, version):
         result = project.invoke(init, catch_exceptions=False)
     paths = (
         ".proj.cfg",
-        "docker-compose.override.yml",
         "changes.d/.gitkeep",
         "towncrier.toml",
         ".towncrier-template.rst",
@@ -43,6 +42,7 @@ def test_init(project, version):
     )
     for path in paths:
         assert Path(path).exists(), f"`{path}` missing"
+    assert Path("docker-compose.override.yml").exists() is (version == 2)
 
     content = Path(".proj.cfg").read_text()
     expected = get_fixture(f"expected.proj.v{version}.cfg")
@@ -53,6 +53,22 @@ def test_init(project, version):
     autoshare_config_dir = Path("./.config/git-autoshare").absolute()
     os.environ["GIT_AUTOSHARE_CACHE_DIR"] = str(autoshare_cache_dir)
     os.environ["GIT_AUTOSHARE_CONFIG_DIR"] = str(autoshare_config_dir)
+
+
+@pytest.mark.project_setup(proj_tmpl_ver=1)
+def test_init_without_proj_cfg_nor_env_override(project):
+    """`init` must work on a project that has no `.proj.cfg` yet.
+
+    Reading the config in that situation raises, so the template version has to
+    be resolved without it. Defaults to v1.
+    """
+    Path(".proj.cfg").unlink()
+    config._reload()
+    with mock.patch.dict(os.environ, {}, clear=True):
+        result = project.invoke(init, catch_exceptions=False)
+    assert result.exit_code == 0
+    assert "template_version = 1" in Path(".proj.cfg").read_text()
+    assert not Path("docker-compose.override.yml").exists()
 
 
 @pytest.mark.project_setup(proj_tmpl_ver=1)
@@ -67,7 +83,7 @@ def test_init_proj_conf_already_existing(project):
     content = Path(".proj.cfg").read_text()
     # original cfg has been preserved
     assert content == expected
-    assert build_path("docker-compose.override.yml.bak").exists()
+    assert not build_path("docker-compose.override.yml.bak").exists()
     assert result.exit_code == 0
 
 
@@ -109,18 +125,16 @@ def test_init_history_file_already_existing_but_already_converted(project):
     assert result.exit_code == 0
 
 
-@pytest.mark.project_setup(proj_tmpl_ver=2)
-def test_init_custom_version(project):
-    result = project.invoke(
-        init,
-        [
-            "--version",
-            "16.0.1.1.0",
-        ],
-        catch_exceptions=False,
-    )
-    assert Path("docker-compose.override.yml").exists()
+@pytest.mark.project_setup(proj_tmpl_ver=1)
+def test_init_version_option_takes_precedence(project):
+    """`--version` selects the template version, over the `PROJ_TMPL_VER` env var."""
+    Path(".proj.cfg").unlink()
+    config._reload()
+    with mock.patch.dict(os.environ, {"PROJ_TMPL_VER": "1"}, clear=True):
+        result = project.invoke(init, ["--version", "2"], catch_exceptions=False)
     assert result.exit_code == 0
+    assert "template_version = 2" in Path(".proj.cfg").read_text()
+    assert Path("docker-compose.override.yml").exists()
 
 
 @pytest.mark.usefixtures("project")
